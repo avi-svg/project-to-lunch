@@ -9,14 +9,21 @@ type Props = {
   userRole: UserRole;
 };
 
-const navigationLinks = [
+type NavigationLink = {
+  href: string;
+  label: string;
+  staffOnly?: boolean;
+  teamOnly?: boolean;
+};
+
+const navigationLinks: readonly NavigationLink[] = [
   { href: "/main-schedule", label: "לוח זמנים ראשי" },
   { href: "/manage-shifts", label: "תורנויות ופעילויות", staffOnly: true },
   { href: "/staff-shifts", label: "אזור משמרות צוות", staffOnly: true },
   { href: "/staff-zone", label: "אזור צוות", staffOnly: true },
   { href: "/personal-area", label: "אזור אישי" },
   { href: "/manage-users", label: "ניהול משתמשים", teamOnly: true },
-] as const;
+];
 
 function getNavigationLinks(userRole: UserRole) {
   return navigationLinks.filter(
