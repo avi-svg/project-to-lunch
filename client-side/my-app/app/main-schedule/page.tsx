@@ -13,6 +13,44 @@ type PageProps = {
 };
 
 type CalendarView = "week" | "month";
+const DISPLAY_TIME_ZONE = "Asia/Jerusalem";
+
+function formatInDisplayTimeZone(
+  value: string | Date,
+  options: Intl.DateTimeFormatOptions,
+) {
+  return new Intl.DateTimeFormat("he-IL", {
+    ...options,
+    timeZone: DISPLAY_TIME_ZONE,
+  }).format(typeof value === "string" ? new Date(value) : value);
+}
+
+function getDatePartsInDisplayTimeZone(value: string | Date) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: DISPLAY_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(typeof value === "string" ? new Date(value) : value);
+  const lookup = new Map(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: lookup.get("year") ?? "0000",
+    month: lookup.get("month") ?? "00",
+    day: lookup.get("day") ?? "00",
+  };
+}
+
+function toDisplayDateParam(value: string | Date) {
+  const { year, month, day } = getDatePartsInDisplayTimeZone(value);
+  return `${year}-${month}-${day}`;
+}
+
+function toDisplayMonthKey(value: string | Date) {
+  const { year, month } = getDatePartsInDisplayTimeZone(value);
+  return `${year}-${month}`;
+}
 
 function getWeekStartSunday(date = new Date()) {
   const copy = new Date(date);
@@ -69,38 +107,33 @@ function toDateParam(date: Date) {
 }
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("he-IL", {
+  return formatInDisplayTimeZone(value, {
     weekday: "short",
     day: "2-digit",
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+  });
 }
 
-function formatDayLabel(value: string) {
-  return new Intl.DateTimeFormat("he-IL", {
+function formatDayLabel(value: string | Date) {
+  return formatInDisplayTimeZone(value, {
     weekday: "long",
     day: "numeric",
     month: "long",
-  }).format(new Date(value));
+  });
 }
 
 function formatMonthLabel(date: Date) {
-  return new Intl.DateTimeFormat("he-IL", {
+  return formatInDisplayTimeZone(date, {
     month: "long",
     year: "numeric",
-  }).format(date);
+  });
 }
 
 function formatWeekRange(start: Date) {
   const end = addDays(start, 6);
-  const formatter = new Intl.DateTimeFormat("he-IL", {
-    day: "numeric",
-    month: "long",
-  });
-
-  return `${formatter.format(start)} - ${formatter.format(end)}`;
+  return `${formatInDisplayTimeZone(start, { day: "numeric", month: "long" })} - ${formatInDisplayTimeZone(end, { day: "numeric", month: "long" })}`;
 }
 
 function formatRegistrationStatus(status: ShiftRegistrationStatus) {
@@ -123,20 +156,13 @@ function groupShiftsByDay(shifts: Shift[]) {
   const groups = new Map<string, Shift[]>();
 
   for (const shift of shifts) {
-    const key = toDateParam(new Date(shift.startTime));
+    const key = toDisplayDateParam(shift.startTime);
     const existing = groups.get(key) ?? [];
     existing.push(shift);
     groups.set(key, existing);
   }
 
   return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
-}
-
-function isSameMonth(date: Date, compareTo: Date) {
-  return (
-    date.getFullYear() === compareTo.getFullYear() &&
-    date.getMonth() === compareTo.getMonth()
-  );
 }
 
 function buildMonthGrid(monthDate: Date) {
@@ -159,6 +185,7 @@ async function fetchMonthShiftsForUser(userId: string, monthDate: Date) {
   const firstWeekStart = getWeekStartSunday(monthStart);
   const lastWeekStart = getWeekStartSunday(monthEnd);
   const collectedShifts = new Map<string, Shift>();
+  const targetMonthKey = toDisplayMonthKey(monthStart);
 
   for (
     let cursor = new Date(firstWeekStart);
@@ -168,9 +195,7 @@ async function fetchMonthShiftsForUser(userId: string, monthDate: Date) {
     const response = await fetchWeekShiftsForUser(userId, toDateParam(cursor));
 
     for (const shift of response.shifts) {
-      const shiftDate = new Date(shift.startTime);
-
-      if (isSameMonth(shiftDate, monthStart)) {
+      if (toDisplayMonthKey(shift.startTime) === targetMonthKey) {
         collectedShifts.set(shift.id, shift);
       }
     }
@@ -222,7 +247,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
   const shiftsByDay = new Map<string, Shift[]>();
 
   for (const shift of shifts) {
-    const key = toDateParam(new Date(shift.startTime));
+    const key = toDisplayDateParam(shift.startTime);
     const existing = shiftsByDay.get(key) ?? [];
     existing.push(shift);
     shiftsByDay.set(key, existing);
@@ -288,8 +313,8 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                 </p>
                 <p className="mt-1 text-sm text-stone-500">
                   {view === "month"
-                    ? `תחילת חודש: ${formatDayLabel(monthStart.toISOString())}`
-                    : `תחילת שבוע: ${formatDayLabel(weekStart.toISOString())}`}
+                    ? `תחילת חודש: ${formatDayLabel(monthStart)}`
+                    : `תחילת שבוע: ${formatDayLabel(weekStart)}`}
                 </p>
               </div>
 
@@ -437,10 +462,10 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                         >
                           <p className="truncate font-medium">{shift.title}</p>
                           <p className="mt-1 text-xs">
-                            {new Intl.DateTimeFormat("he-IL", {
+                            {formatInDisplayTimeZone(shift.startTime, {
                               hour: "2-digit",
                               minute: "2-digit",
-                            }).format(new Date(shift.startTime))}
+                            })}
                           </p>
                           {isStaffUser ? (
                             <div className="mt-2 flex flex-wrap gap-2 text-xs">
