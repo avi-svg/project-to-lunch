@@ -60,12 +60,17 @@ function normalizeDirectoryUser(value: unknown): BackendDirectoryUser | null {
 }
 
 function normalizeUsersPayload(payload: BackendUsersEnvelope | unknown) {
+  const payloadRecord =
+    typeof payload === "object" && payload !== null
+      ? (payload as Record<string, unknown>)
+      : null;
+
   const rawUsers = Array.isArray(payload)
     ? payload
-    : typeof payload === "object" && payload !== null
-      ? (payload as BackendUsersEnvelope).users ??
-        (payload as BackendUsersEnvelope).data ??
-        (payload as BackendUsersEnvelope).items ??
+    : payloadRecord
+      ? (Array.isArray(payloadRecord.users) ? payloadRecord.users : undefined) ??
+        (Array.isArray(payloadRecord.data) ? payloadRecord.data : undefined) ??
+        (Array.isArray(payloadRecord.items) ? payloadRecord.items : undefined) ??
         []
       : [];
 
