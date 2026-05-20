@@ -52,6 +52,10 @@ function toDisplayMonthKey(value: string | Date) {
   return `${year}-${month}`;
 }
 
+function isInDisplayMonth(value: string | Date, monthDate: Date) {
+  return toDisplayMonthKey(value) === toDisplayMonthKey(monthDate);
+}
+
 function getWeekStartSunday(date = new Date()) {
   const copy = new Date(date);
   const day = copy.getDay();
@@ -383,7 +387,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
               {monthDays.map((day) => {
                 const dayKey = toDateParam(day);
                 const dayShifts = shiftsByDay.get(dayKey) ?? [];
-                const inCurrentMonth = isSameMonth(day, monthStart);
+                const inCurrentMonth = isInDisplayMonth(day, monthStart);
 
                 return (
                   <article
