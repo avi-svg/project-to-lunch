@@ -56,31 +56,40 @@ function isInDisplayMonth(value: string | Date, monthDate: Date) {
   return toDisplayMonthKey(value) === toDisplayMonthKey(monthDate);
 }
 
+function createCalendarDate(year: number, month: number, day: number) {
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+}
+
+function getDisplayToday() {
+  const { year, month, day } = getDatePartsInDisplayTimeZone(new Date());
+  return createCalendarDate(Number(year), Number(month), Number(day));
+}
+
 function getWeekStartSunday(date = new Date()) {
   const copy = new Date(date);
-  const day = copy.getDay();
+  const day = copy.getUTCDay();
   const diff = -day;
-  copy.setDate(copy.getDate() + diff);
-  copy.setHours(0, 0, 0, 0);
+  copy.setUTCDate(copy.getUTCDate() + diff);
+  copy.setUTCHours(12, 0, 0, 0);
   return copy;
 }
 
 function getMonthStart(date = new Date()) {
   const copy = new Date(date);
-  copy.setDate(1);
-  copy.setHours(0, 0, 0, 0);
+  copy.setUTCDate(1);
+  copy.setUTCHours(12, 0, 0, 0);
   return copy;
 }
 
 function addDays(date: Date, days: number) {
   const copy = new Date(date);
-  copy.setDate(copy.getDate() + days);
+  copy.setUTCDate(copy.getUTCDate() + days);
   return copy;
 }
 
 function addMonths(date: Date, months: number) {
   const copy = new Date(date);
-  copy.setMonth(copy.getMonth() + months);
+  copy.setUTCMonth(copy.getUTCMonth() + months);
   return copy;
 }
 
@@ -90,23 +99,23 @@ function parseView(value?: string): CalendarView {
 
 function parseCalendarDate(value?: string) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return new Date();
+    return getDisplayToday();
   }
 
   const [year, month, day] = value.split("-").map(Number);
-  const parsedDate = new Date(year, month - 1, day);
+  const parsedDate = createCalendarDate(year, month, day);
 
   if (Number.isNaN(parsedDate.getTime())) {
-    return new Date();
+    return getDisplayToday();
   }
 
   return parsedDate;
 }
 
 function toDateParam(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -220,7 +229,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
   const resolvedSearchParams = await searchParams;
   const view = parseView(resolvedSearchParams?.view);
   const selectedDate = parseCalendarDate(resolvedSearchParams?.date);
-  const today = new Date();
+  const today = getDisplayToday();
   const isStaffUser = session.user.role === "staff";
 
   const weekStart = getWeekStartSunday(selectedDate);
