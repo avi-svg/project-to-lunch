@@ -23,15 +23,6 @@ function getWeekStartSunday(date = new Date()) {
   return copy;
 }
 
-function getWeekStartMonday(date = new Date()) {
-  const copy = new Date(date);
-  const day = copy.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  copy.setDate(copy.getDate() + diff);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
 function getMonthStart(date = new Date()) {
   const copy = new Date(date);
   copy.setDate(1);
@@ -149,8 +140,8 @@ function buildMonthGrid(monthDate: Date) {
 async function fetchMonthShiftsForUser(userId: string, monthDate: Date) {
   const monthStart = getMonthStart(monthDate);
   const monthEnd = addDays(getMonthStart(addMonths(monthDate, 1)), -1);
-  const firstWeekStart = getWeekStartMonday(monthStart);
-  const lastWeekStart = getWeekStartMonday(monthEnd);
+  const firstWeekStart = getWeekStartSunday(monthStart);
+  const lastWeekStart = getWeekStartSunday(monthEnd);
   const collectedShifts = new Map<string, Shift>();
 
   for (
@@ -199,7 +190,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
   const view = parseView(resolvedSearchParams?.view);
   const selectedDate = parseCalendarDate(resolvedSearchParams?.date);
   const today = new Date();
-  const weekStart = getWeekStartMonday(selectedDate);
+  const weekStart = getWeekStartSunday(selectedDate);
   const monthStart = getMonthStart(selectedDate);
   const previousDate =
     view === "month" ? addMonths(monthStart, -1) : addDays(weekStart, -7);

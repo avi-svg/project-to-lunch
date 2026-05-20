@@ -100,9 +100,9 @@ function startOfWeekUtc(value) {
     Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
   );
   const day = utcDate.getUTCDay();
-  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const diffToSunday = -day;
 
-  utcDate.setUTCDate(utcDate.getUTCDate() + diffToMonday);
+  utcDate.setUTCDate(utcDate.getUTCDate() + diffToSunday);
   utcDate.setUTCHours(0, 0, 0, 0);
 
   return utcDate;
