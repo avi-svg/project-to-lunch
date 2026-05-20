@@ -29,6 +29,7 @@ const shiftTypesByCategory = {
   night: 'dinner',
   field: 'cleaning',
 };
+const DISPLAY_TIME_ZONE = 'Asia/Jerusalem';
 
 function isValidDate(value) {
   return !Number.isNaN(new Date(value).getTime());
@@ -89,29 +90,123 @@ function buildEndTimeFromDuration(startTime, durationMinutes) {
   return endDate.toISOString();
 }
 
-function startOfWeekUtc(value) {
-  const date = value ? new Date(value) : new Date();
+function getDatePartsInDisplayTimeZone(value) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: DISPLAY_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(value instanceof Date ? value : new Date(value));
+  const lookup = new Map(parts.map((part) => [part.type, part.value]));
 
-  if (Number.isNaN(date.getTime())) {
+  return {
+    year: Number(lookup.get('year')),
+    month: Number(lookup.get('month')),
+    day: Number(lookup.get('day')),
+  };
+}
+
+function parseDisplayDateInput(value) {
+  if (value === undefined || value === null || value === '') {
+    return getDatePartsInDisplayTimeZone(new Date());
+  }
+
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    const parsedDate = new Date(Date.UTC(year, month - 1, day));
+
+    if (
+      Number.isNaN(parsedDate.getTime()) ||
+      parsedDate.getUTCFullYear() !== year ||
+      parsedDate.getUTCMonth() !== month - 1 ||
+      parsedDate.getUTCDate() !== day
+    ) {
+      return null;
+    }
+
+    return { year, month, day };
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
     return null;
   }
 
-  const utcDate = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
-  );
-  const day = utcDate.getUTCDay();
+  return getDatePartsInDisplayTimeZone(parsedDate);
+}
+
+function getTimeZoneOffsetMinutes(timeZone, date) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    timeZoneName: 'shortOffset',
+  });
+  const timeZoneName =
+    formatter.formatToParts(date).find((part) => part.type === 'timeZoneName')?.value ?? 'GMT';
+
+  if (timeZoneName === 'GMT') {
+    return 0;
+  }
+
+  const match = timeZoneName.match(/^GMT([+-])(\d{1,2})(?::(\d{2}))?$/);
+
+  if (!match) {
+    return 0;
+  }
+
+  const sign = match[1] === '-' ? -1 : 1;
+  const hours = Number(match[2]);
+  const minutes = Number(match[3] ?? '0');
+
+  return sign * (hours * 60 + minutes);
+}
+
+function createUtcDateForDisplayMidnight(year, month, day) {
+  let utcMs = Date.UTC(year, month - 1, day, 0, 0, 0, 0);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const offsetMinutes = getTimeZoneOffsetMinutes(DISPLAY_TIME_ZONE, new Date(utcMs));
+    utcMs = Date.UTC(year, month - 1, day, 0, 0, 0, 0) - offsetMinutes * 60000;
+  }
+
+  return new Date(utcMs);
+}
+
+function startOfWeekUtc(value) {
+  const dateParts = parseDisplayDateInput(value);
+
+  if (!dateParts) {
+    return null;
+  }
+
+  const baseDate = new Date(Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day));
+  const day = baseDate.getUTCDay();
   const diffToSunday = -day;
+  const weekStartDate = new Date(
+    Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day)
+  );
 
-  utcDate.setUTCDate(utcDate.getUTCDate() + diffToSunday);
-  utcDate.setUTCHours(0, 0, 0, 0);
+  weekStartDate.setUTCDate(weekStartDate.getUTCDate() + diffToSunday);
 
-  return utcDate;
+  return createUtcDateForDisplayMidnight(
+    weekStartDate.getUTCFullYear(),
+    weekStartDate.getUTCMonth() + 1,
+    weekStartDate.getUTCDate()
+  );
 }
 
 function endOfWeekUtc(weekStart) {
-  const weekEnd = new Date(weekStart);
-  weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
-  return weekEnd;
+  const { year, month, day } = getDatePartsInDisplayTimeZone(weekStart);
+  const weekEndDate = new Date(Date.UTC(year, month - 1, day));
+
+  weekEndDate.setUTCDate(weekEndDate.getUTCDate() + 7);
+
+  return createUtcDateForDisplayMidnight(
+    weekEndDate.getUTCFullYear(),
+    weekEndDate.getUTCMonth() + 1,
+    weekEndDate.getUTCDate()
+  );
 }
 
 function formatShiftRow(row) {
