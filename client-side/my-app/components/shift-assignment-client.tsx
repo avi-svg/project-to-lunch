@@ -76,11 +76,14 @@ function getAssignedUsersFromShift(shift: Shift): AssignedUser[] {
 }
 
 export function ShiftAssignmentClient({ shift, users }: Props) {
-  const initialAssignedUsers = useMemo(() => getAssignedUsersFromShift(shift), [shift]);
+  const initialAssignedUsers = useMemo<AssignedUser[]>(
+    () => getAssignedUsersFromShift(shift),
+    [shift],
+  );
   const [initialAssignedUserIds, setInitialAssignedUserIds] = useState<string[]>(
     initialAssignedUsers.map((user) => user.id),
   );
-  const [assignedUsers, setAssignedUsers] = useState(initialAssignedUsers);
+  const [assignedUsers, setAssignedUsers] = useState<AssignedUser[]>(initialAssignedUsers);
   const [activeDropZone, setActiveDropZone] = useState<"pool" | "assigned" | null>(null);
   const [feedback, setFeedback] = useState<{
     variant: "success" | "error";
@@ -145,7 +148,7 @@ export function ShiftAssignmentClient({ shift, users }: Props) {
       return;
     }
 
-    setAssignedUsers((current) => [
+    setAssignedUsers((current): AssignedUser[] => [
       ...current,
       {
         id: nextUser.id,
