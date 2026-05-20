@@ -23,6 +23,14 @@ type DragPayload =
       userId: string;
     };
 
+type AssignedUser = {
+  id: string;
+  email: string;
+  name: string | null;
+  status: ShiftRegistrationStatus;
+  registrationId: string | null;
+};
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("he-IL", {
     weekday: "short",
@@ -49,7 +57,7 @@ function formatRegistrationStatus(status: ShiftRegistrationStatus) {
   return "בוטל";
 }
 
-function getAssignedUsersFromShift(shift: Shift) {
+function getAssignedUsersFromShift(shift: Shift): AssignedUser[] {
   const registrations = shift.registrations ?? [];
 
   return registrations
