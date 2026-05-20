@@ -148,16 +148,15 @@ export function ShiftAssignmentClient({ shift, users }: Props) {
       return;
     }
 
-    setAssignedUsers((current): AssignedUser[] => [
-      ...current,
-      {
-        id: nextUser.id,
-        email: nextUser.email,
-        name: nextUser.name,
-        status: "pending",
-        registrationId: null,
-      },
-    ]);
+    const nextAssignedUser: AssignedUser = {
+      id: nextUser.id,
+      email: nextUser.email,
+      name: nextUser.name,
+      status: "pending",
+      registrationId: null,
+    };
+
+    setAssignedUsers((current) => [...current, nextAssignedUser]);
     setFeedback(null);
   }
 
