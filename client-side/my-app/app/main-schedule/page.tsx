@@ -346,8 +346,8 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
             </p>
           </div>
 
-          <div className="flex flex-col gap-4 border-t border-stone-200 bg-stone-50 p-6">
-            <div className="flex flex-wrap gap-3">
+          <div className="relative z-10 flex flex-col gap-4 border-t border-stone-200 bg-stone-50 p-6">
+            <div className="relative z-10 flex flex-wrap gap-3">
               <Link
                 href={buildCalendarHref(
                   "/main-schedule",
@@ -380,7 +380,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
               </Link>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
+            <div className="relative z-10 grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
               <Link
                 href={buildCalendarHref(
                   "/main-schedule",
