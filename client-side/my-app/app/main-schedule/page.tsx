@@ -5,6 +5,9 @@ import { authOptions } from "@/auth";
 import { BackendShiftsError, fetchWeekShiftsForUser } from "@/lib/server-shifts";
 import type { Shift, ShiftRegistrationStatus } from "@/lib/shifts";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type PageProps = {
   searchParams?: Promise<{
     view?: string;
