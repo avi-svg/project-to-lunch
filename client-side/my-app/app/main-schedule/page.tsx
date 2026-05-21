@@ -1,10 +1,11 @@
-import { CalendarNavLink as Link } from "@/components/calendar-nav-link";
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { authOptions } from "@/auth";
 import { BackendShiftsError, fetchWeekShiftsForUser } from "@/lib/server-shifts";
 import type { Shift, ShiftRegistrationStatus } from "@/lib/shifts";
+import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -125,22 +126,34 @@ function toDateParam(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function buildCalendarHref(
-  path: string,
-  view: CalendarView,
-  date: Date,
-  debugEnabled: boolean,
-) {
-  const params = new URLSearchParams({
-    view,
-    date: toDateParam(date),
-  });
-
-  if (debugEnabled) {
-    params.set("debug", "1");
-  }
-
-  return `${path}?${params.toString()}`;
+function CalendarNavButton({
+  action,
+  view,
+  date,
+  debugEnabled,
+  className,
+  children,
+}: {
+  action: string;
+  view: CalendarView;
+  date: Date;
+  debugEnabled: boolean;
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <form action={action} method="get" className="contents">
+      <input type="hidden" name="view" value={view} />
+      <input type="hidden" name="date" value={toDateParam(date)} />
+      {debugEnabled ? <input type="hidden" name="debug" value="1" /> : null}
+      <button
+        type="submit"
+        className={`${className} relative z-10 cursor-pointer pointer-events-auto`}
+      >
+        {children}
+      </button>
+    </form>
+  );
 }
 
 function formatDateTime(value: string) {
@@ -348,13 +361,11 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
 
           <div className="relative z-10 flex flex-col gap-4 border-t border-stone-200 bg-stone-50 p-6">
             <div className="relative z-10 flex flex-wrap gap-3">
-              <Link
-                href={buildCalendarHref(
-                  "/main-schedule",
-                  "week",
-                  weekViewDate,
-                  debugEnabled,
-                )}
+              <CalendarNavButton
+                action="/main-schedule"
+                view="week"
+                date={weekViewDate}
+                debugEnabled={debugEnabled}
                 className={`inline-flex rounded-2xl px-5 py-3 text-sm font-medium transition ${
                   view === "week"
                     ? "bg-stone-900 text-white"
@@ -362,14 +373,12 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                 }`}
               >
                 תצוגה שבועית
-              </Link>
-              <Link
-                href={buildCalendarHref(
-                  "/main-schedule",
-                  "month",
-                  selectedDate,
-                  debugEnabled,
-                )}
+              </CalendarNavButton>
+              <CalendarNavButton
+                action="/main-schedule"
+                view="month"
+                date={selectedDate}
+                debugEnabled={debugEnabled}
                 className={`inline-flex rounded-2xl px-5 py-3 text-sm font-medium transition ${
                   view === "month"
                     ? "bg-stone-900 text-white"
@@ -377,22 +386,19 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                 }`}
               >
                 תצוגה חודשית
-              </Link>
+              </CalendarNavButton>
             </div>
 
             <div className="relative z-10 grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
-              <Link
-                href={buildCalendarHref(
-                  "/main-schedule",
-                  view,
-                  previousDate,
-                  debugEnabled,
-                )}
-                prefetch={false}
+              <CalendarNavButton
+                action="/main-schedule"
+                view={view}
+                date={previousDate}
+                debugEnabled={debugEnabled}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
                 {view === "month" ? "חודש קודם" : "שבוע קודם"}
-              </Link>
+              </CalendarNavButton>
 
               <div className="rounded-3xl bg-white p-4 shadow-sm">
                 <p className="text-sm text-stone-500">
@@ -410,31 +416,25 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                 </p>
               </div>
 
-              <Link
-                href={buildCalendarHref(
-                  "/main-schedule",
-                  view,
-                  currentViewDate,
-                  debugEnabled,
-                )}
-                prefetch={false}
+              <CalendarNavButton
+                action="/main-schedule"
+                view={view}
+                date={currentViewDate}
+                debugEnabled={debugEnabled}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
                 {view === "month" ? "החודש הנוכחי" : "השבוע הנוכחי"}
-              </Link>
+              </CalendarNavButton>
 
-              <Link
-                href={buildCalendarHref(
-                  "/main-schedule",
-                  view,
-                  nextDate,
-                  debugEnabled,
-                )}
-                prefetch={false}
+              <CalendarNavButton
+                action="/main-schedule"
+                view={view}
+                date={nextDate}
+                debugEnabled={debugEnabled}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
                 {view === "month" ? "חודש הבא" : "שבוע הבא"}
-              </Link>
+              </CalendarNavButton>
             </div>
           </div>
         </section>
