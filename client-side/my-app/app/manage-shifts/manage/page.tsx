@@ -186,23 +186,14 @@ function formatWeekRange(start: Date) {
   return `${formatInDisplayTimeZone(start, { day: "numeric", month: "long" })} - ${formatInDisplayTimeZone(end, { day: "numeric", month: "long" })}`;
 }
 
-function toDisplayCalendarDate(value: string | Date) {
-  const { year, month, day } = getDatePartsInDisplayTimeZone(value);
-  return createCalendarDate(Number(year), Number(month), Number(day));
-}
+function filterShiftsToSelectedWeek(shifts: Shift[], weekStart: Date) {
+  const allowedDates = new Set<string>();
 
-function filterShiftsToWeekRange(
-  shifts: Shift[],
-  weekStartIso: string,
-  weekEndIso: string,
-) {
-  const weekStartTime = new Date(weekStartIso).getTime();
-  const weekEndTime = new Date(weekEndIso).getTime();
+  for (let offset = 0; offset < 7; offset += 1) {
+    allowedDates.add(toDateParam(addDays(weekStart, offset)));
+  }
 
-  return shifts.filter((shift) => {
-    const shiftStartTime = new Date(shift.startTime).getTime();
-    return shiftStartTime >= weekStartTime && shiftStartTime < weekEndTime;
-  });
+  return shifts.filter((shift) => allowedDates.has(toDisplayDateParam(shift.startTime)));
 }
 
 function groupShiftsByDay(shifts: Shift[]) {
@@ -290,7 +281,6 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
   const monthStart = getMonthStart(selectedDate);
   let shifts: Shift[] = [];
   let errorMessage = "";
-  let displayedWeekStart = currentWeekStart;
   let responseWeekStart = "";
   let responseWeekEnd = "";
 
@@ -305,12 +295,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
 
       responseWeekStart = weekResponse.weekStart;
       responseWeekEnd = weekResponse.weekEnd;
-      displayedWeekStart = toDisplayCalendarDate(weekResponse.weekStart);
-      shifts = filterShiftsToWeekRange(
-        weekResponse.shifts,
-        weekResponse.weekStart,
-        weekResponse.weekEnd,
-      );
+      shifts = filterShiftsToSelectedWeek(weekResponse.shifts, currentWeekStart);
     }
   } catch (error) {
     errorMessage =
@@ -319,7 +304,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
         : "לא ניתן לטעון את התורנויות כרגע.";
   }
 
-  const weekStart = displayedWeekStart;
+  const weekStart = currentWeekStart;
   const previousDate =
     view === "month" ? addMonths(monthStart, -1) : addDays(weekStart, -7);
   const nextDate =
