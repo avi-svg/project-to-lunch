@@ -149,6 +149,25 @@ function formatWeekRange(start: Date) {
   return `${formatInDisplayTimeZone(start, { day: "numeric", month: "long" })} - ${formatInDisplayTimeZone(end, { day: "numeric", month: "long" })}`;
 }
 
+function toDisplayCalendarDate(value: string | Date) {
+  const { year, month, day } = getDatePartsInDisplayTimeZone(value);
+  return createCalendarDate(Number(year), Number(month), Number(day));
+}
+
+function filterShiftsToWeekRange(
+  shifts: Shift[],
+  weekStartIso: string,
+  weekEndIso: string,
+) {
+  const weekStartTime = new Date(weekStartIso).getTime();
+  const weekEndTime = new Date(weekEndIso).getTime();
+
+  return shifts.filter((shift) => {
+    const shiftStartTime = new Date(shift.startTime).getTime();
+    return shiftStartTime >= weekStartTime && shiftStartTime < weekEndTime;
+  });
+}
+
 function formatRegistrationStatus(status: ShiftRegistrationStatus) {
   if (status === "approved") {
     return "משויך ומאושר";
@@ -232,21 +251,28 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
   const today = getDisplayToday();
   const isStaffUser = session.user.role === "staff";
 
-  const weekStart = getWeekStartSunday(selectedDate);
+  const currentWeekStart = getWeekStartSunday(selectedDate);
   const monthStart = getMonthStart(selectedDate);
-  const previousDate =
-    view === "month" ? addMonths(monthStart, -1) : addDays(weekStart, -7);
-  const nextDate =
-    view === "month" ? addMonths(monthStart, 1) : addDays(weekStart, 7);
-
   let shifts: Shift[] = [];
   let errorMessage = "";
+  let displayedWeekStart = currentWeekStart;
 
   try {
-    shifts =
-      view === "month"
-        ? await fetchMonthShiftsForUser(session.user.id, monthStart)
-        : (await fetchWeekShiftsForUser(session.user.id, toDateParam(weekStart))).shifts;
+    if (view === "month") {
+      shifts = await fetchMonthShiftsForUser(session.user.id, monthStart);
+    } else {
+      const weekResponse = await fetchWeekShiftsForUser(
+        session.user.id,
+        toDateParam(currentWeekStart),
+      );
+
+      displayedWeekStart = toDisplayCalendarDate(weekResponse.weekStart);
+      shifts = filterShiftsToWeekRange(
+        weekResponse.shifts,
+        weekResponse.weekStart,
+        weekResponse.weekEnd,
+      );
+    }
   } catch (error) {
     errorMessage =
       error instanceof BackendShiftsError
@@ -254,6 +280,13 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
         : "לא ניתן לטעון את הפעילויות כרגע.";
   }
 
+  const weekStart = displayedWeekStart;
+  const previousDate =
+    view === "month" ? addMonths(monthStart, -1) : addDays(weekStart, -7);
+  const nextDate =
+    view === "month" ? addMonths(monthStart, 1) : addDays(weekStart, 7);
+  const weekViewDate = getWeekStartSunday(selectedDate);
+  const currentViewDate = view === "month" ? today : getWeekStartSunday(today);
   const myActivities = shifts.filter((shift) => Boolean(shift.myRegistration));
   const groupedShifts = groupShiftsByDay(shifts);
   const monthDays = buildMonthGrid(monthStart);
@@ -286,7 +319,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
           <div className="flex flex-col gap-4 border-t border-stone-200 bg-stone-50 p-6">
             <div className="flex flex-wrap gap-3">
               <Link
-                href={`/main-schedule?view=week&date=${toDateParam(selectedDate)}`}
+                href={`/main-schedule?view=week&date=${toDateParam(weekViewDate)}`}
                 className={`inline-flex rounded-2xl px-5 py-3 text-sm font-medium transition ${
                   view === "week"
                     ? "bg-stone-900 text-white"
@@ -332,7 +365,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
               </div>
 
               <Link
-                href={`/main-schedule?view=${view}&date=${toDateParam(today)}`}
+                href={`/main-schedule?view=${view}&date=${toDateParam(currentViewDate)}`}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
                 {view === "month" ? "החודש הנוכחי" : "השבוע הנוכחי"}
