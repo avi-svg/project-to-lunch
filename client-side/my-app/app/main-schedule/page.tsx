@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { CalendarNavLink as Link } from "@/components/calendar-nav-link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/auth";
@@ -323,7 +323,6 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
             <div className="flex flex-wrap gap-3">
               <Link
                 href={`/main-schedule?view=week&date=${toDateParam(weekViewDate)}`}
-                prefetch={false}
                 className={`inline-flex rounded-2xl px-5 py-3 text-sm font-medium transition ${
                   view === "week"
                     ? "bg-stone-900 text-white"
@@ -334,7 +333,6 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
               </Link>
               <Link
                 href={`/main-schedule?view=month&date=${toDateParam(selectedDate)}`}
-                prefetch={false}
                 className={`inline-flex rounded-2xl px-5 py-3 text-sm font-medium transition ${
                   view === "month"
                     ? "bg-stone-900 text-white"

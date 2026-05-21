@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { CalendarNavLink as Link } from "@/components/calendar-nav-link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/auth";
