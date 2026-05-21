@@ -323,6 +323,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
             <div className="flex flex-wrap gap-3">
               <Link
                 href={`/main-schedule?view=week&date=${toDateParam(weekViewDate)}`}
+                prefetch={false}
                 className={`inline-flex rounded-2xl px-5 py-3 text-sm font-medium transition ${
                   view === "week"
                     ? "bg-stone-900 text-white"
@@ -333,6 +334,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
               </Link>
               <Link
                 href={`/main-schedule?view=month&date=${toDateParam(selectedDate)}`}
+                prefetch={false}
                 className={`inline-flex rounded-2xl px-5 py-3 text-sm font-medium transition ${
                   view === "month"
                     ? "bg-stone-900 text-white"
@@ -346,6 +348,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
             <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
               <Link
                 href={`/main-schedule?view=${view}&date=${toDateParam(previousDate)}`}
+                prefetch={false}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
                 {view === "month" ? "חודש קודם" : "שבוע קודם"}
@@ -369,6 +372,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
 
               <Link
                 href={`/main-schedule?view=${view}&date=${toDateParam(currentViewDate)}`}
+                prefetch={false}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
                 {view === "month" ? "החודש הנוכחי" : "השבוע הנוכחי"}
@@ -376,6 +380,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
 
               <Link
                 href={`/main-schedule?view=${view}&date=${toDateParam(nextDate)}`}
+                prefetch={false}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
                 {view === "month" ? "חודש הבא" : "שבוע הבא"}

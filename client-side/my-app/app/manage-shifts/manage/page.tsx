@@ -318,6 +318,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
             <div className="flex flex-wrap gap-3">
               <Link
                 href={`/manage-shifts/manage?view=week&date=${toDateParam(weekViewDate)}`}
+                prefetch={false}
                 className={`inline-flex rounded-2xl px-5 py-3 text-sm font-medium transition ${
                   view === "week"
                     ? "bg-stone-900 text-white"
@@ -328,6 +329,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
               </Link>
               <Link
                 href={`/manage-shifts/manage?view=month&date=${toDateParam(selectedDate)}`}
+                prefetch={false}
                 className={`inline-flex rounded-2xl px-5 py-3 text-sm font-medium transition ${
                   view === "month"
                     ? "bg-stone-900 text-white"
@@ -347,6 +349,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
             <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
               <Link
                 href={`/manage-shifts/manage?view=${view}&date=${toDateParam(previousDate)}`}
+                prefetch={false}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
                 {view === "month" ? "חודש קודם" : "שבוע קודם"}
@@ -370,6 +373,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
 
               <Link
                 href={`/manage-shifts/manage?view=${view}&date=${toDateParam(currentViewDate)}`}
+                prefetch={false}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
                 {view === "month" ? "החודש הנוכחי" : "השבוע הנוכחי"}
@@ -377,6 +381,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
 
               <Link
                 href={`/manage-shifts/manage?view=${view}&date=${toDateParam(nextDate)}`}
+                prefetch={false}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
                 {view === "month" ? "החודש הבא" : "השבוע הבא"}
