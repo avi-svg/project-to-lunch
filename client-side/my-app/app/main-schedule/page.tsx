@@ -266,6 +266,27 @@ async function fetchMonthShiftsForUser(userId: string, monthDate: Date) {
   );
 }
 
+async function fetchSelectedWeekShiftsForUser(userId: string, weekStart: Date) {
+  const requestedDates = [weekStart, addDays(weekStart, 6)];
+  const responses = await Promise.all(
+    requestedDates.map((date) => fetchWeekShiftsForUser(userId, toDateParam(date))),
+  );
+  const collectedShifts = new Map<string, Shift>();
+
+  for (const response of responses) {
+    for (const shift of response.shifts) {
+      collectedShifts.set(shift.id, shift);
+    }
+  }
+
+  return {
+    shifts: filterShiftsToSelectedWeek(Array.from(collectedShifts.values()), weekStart).sort(
+      (a, b) => a.startTime.localeCompare(b.startTime),
+    ),
+    responses,
+  };
+}
+
 export default async function MainSchedulePage({ searchParams }: PageProps) {
   await connection();
   const session = await getServerSession(authOptions);
@@ -292,14 +313,13 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
     if (view === "month") {
       shifts = await fetchMonthShiftsForUser(session.user.id, monthStart);
     } else {
-      const weekResponse = await fetchWeekShiftsForUser(
+      const { shifts: weekShifts, responses } = await fetchSelectedWeekShiftsForUser(
         session.user.id,
-        toDateParam(selectedDate),
+        currentWeekStart,
       );
-
-      responseWeekStart = weekResponse.weekStart;
-      responseWeekEnd = weekResponse.weekEnd;
-      shifts = filterShiftsToSelectedWeek(weekResponse.shifts, currentWeekStart);
+      responseWeekStart = responses.map((response) => response.weekStart).join(" | ");
+      responseWeekEnd = responses.map((response) => response.weekEnd).join(" | ");
+      shifts = weekShifts;
     }
   } catch (error) {
     errorMessage =
