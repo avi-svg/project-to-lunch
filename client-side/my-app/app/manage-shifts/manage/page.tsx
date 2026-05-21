@@ -1,12 +1,14 @@
 import { CalendarNavLink as Link } from "@/components/calendar-nav-link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { authOptions } from "@/auth";
 import { BackendShiftsError, fetchWeekShiftsForUser } from "@/lib/server-shifts";
 import type { Shift } from "@/lib/shifts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 type PageProps = {
   searchParams?: Promise<{
@@ -236,6 +238,7 @@ function getApprovedCount(shift: Shift) {
 }
 
 export default async function ManageShiftsOverviewPage({ searchParams }: PageProps) {
+  await connection();
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
