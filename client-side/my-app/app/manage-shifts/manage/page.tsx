@@ -300,7 +300,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
     } else {
       const weekResponse = await fetchWeekShiftsForUser(
         session.user.id,
-        toDateParam(currentWeekStart),
+        toDateParam(selectedDate),
       );
 
       responseWeekStart = weekResponse.weekStart;

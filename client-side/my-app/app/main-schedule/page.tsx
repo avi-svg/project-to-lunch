@@ -304,7 +304,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
     } else {
       const weekResponse = await fetchWeekShiftsForUser(
         session.user.id,
-        toDateParam(currentWeekStart),
+        toDateParam(selectedDate),
       );
 
       responseWeekStart = weekResponse.weekStart;
