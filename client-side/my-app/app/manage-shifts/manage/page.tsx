@@ -14,6 +14,7 @@ type PageProps = {
   searchParams?: Promise<{
     view?: string;
     date?: string;
+    debug?: string;
   }>;
 };
 
@@ -122,6 +123,24 @@ function toDateParam(date: Date) {
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
   const day = String(date.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function buildCalendarHref(
+  path: string,
+  view: CalendarView,
+  date: Date,
+  debugEnabled: boolean,
+) {
+  const params = new URLSearchParams({
+    view,
+    date: toDateParam(date),
+  });
+
+  if (debugEnabled) {
+    params.set("debug", "1");
+  }
+
+  return `${path}?${params.toString()}`;
 }
 
 function formatDateTime(value: string) {
@@ -252,12 +271,15 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
   const resolvedSearchParams = await searchParams;
   const view = parseView(resolvedSearchParams?.view);
   const selectedDate = parseCalendarDate(resolvedSearchParams?.date);
+  const debugEnabled = resolvedSearchParams?.debug === "1";
   const today = getDisplayToday();
   const currentWeekStart = getWeekStartSunday(selectedDate);
   const monthStart = getMonthStart(selectedDate);
   let shifts: Shift[] = [];
   let errorMessage = "";
   let displayedWeekStart = currentWeekStart;
+  let responseWeekStart = "";
+  let responseWeekEnd = "";
 
   try {
     if (view === "month") {
@@ -268,6 +290,8 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
         toDateParam(currentWeekStart),
       );
 
+      responseWeekStart = weekResponse.weekStart;
+      responseWeekEnd = weekResponse.weekEnd;
       displayedWeekStart = toDisplayCalendarDate(weekResponse.weekStart);
       shifts = filterShiftsToWeekRange(
         weekResponse.shifts,
@@ -320,7 +344,12 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
           <div className="flex flex-col gap-4 border-t border-stone-200 bg-stone-50 p-6">
             <div className="flex flex-wrap gap-3">
               <Link
-                href={`/manage-shifts/manage?view=week&date=${toDateParam(weekViewDate)}`}
+                href={buildCalendarHref(
+                  "/manage-shifts/manage",
+                  "week",
+                  weekViewDate,
+                  debugEnabled,
+                )}
                 prefetch={false}
                 className={`inline-flex rounded-2xl px-5 py-3 text-sm font-medium transition ${
                   view === "week"
@@ -331,7 +360,12 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
                 תצוגה שבועית
               </Link>
               <Link
-                href={`/manage-shifts/manage?view=month&date=${toDateParam(selectedDate)}`}
+                href={buildCalendarHref(
+                  "/manage-shifts/manage",
+                  "month",
+                  selectedDate,
+                  debugEnabled,
+                )}
                 prefetch={false}
                 className={`inline-flex rounded-2xl px-5 py-3 text-sm font-medium transition ${
                   view === "month"
@@ -351,7 +385,12 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
 
             <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
               <Link
-                href={`/manage-shifts/manage?view=${view}&date=${toDateParam(previousDate)}`}
+                href={buildCalendarHref(
+                  "/manage-shifts/manage",
+                  view,
+                  previousDate,
+                  debugEnabled,
+                )}
                 prefetch={false}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
@@ -375,7 +414,12 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
               </div>
 
               <Link
-                href={`/manage-shifts/manage?view=${view}&date=${toDateParam(currentViewDate)}`}
+                href={buildCalendarHref(
+                  "/manage-shifts/manage",
+                  view,
+                  currentViewDate,
+                  debugEnabled,
+                )}
                 prefetch={false}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
@@ -383,7 +427,12 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
               </Link>
 
               <Link
-                href={`/manage-shifts/manage?view=${view}&date=${toDateParam(nextDate)}`}
+                href={buildCalendarHref(
+                  "/manage-shifts/manage",
+                  view,
+                  nextDate,
+                  debugEnabled,
+                )}
                 prefetch={false}
                 className="inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm font-medium text-stone-900 transition hover:border-stone-900"
               >
@@ -392,6 +441,21 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
             </div>
           </div>
         </section>
+
+        {debugEnabled ? (
+          <section className="rounded-[2rem] border border-amber-300 bg-amber-50 p-6 text-sm text-amber-950">
+            <p className="font-semibold">Debug</p>
+            <p className="mt-2">query date: {resolvedSearchParams?.date ?? "(empty)"}</p>
+            <p>selectedDate: {toDateParam(selectedDate)}</p>
+            <p>requestedWeekStart: {toDateParam(currentWeekStart)}</p>
+            <p>displayedWeekStart: {toDateParam(weekStart)}</p>
+            <p>responseWeekStart: {responseWeekStart || "(month view)"}</p>
+            <p>responseWeekEnd: {responseWeekEnd || "(month view)"}</p>
+            <p>previousDate href date: {toDateParam(previousDate)}</p>
+            <p>nextDate href date: {toDateParam(nextDate)}</p>
+            <p>shifts count: {shifts.length}</p>
+          </section>
+        ) : null}
 
         <div className="flex flex-wrap gap-3">
           <Link
