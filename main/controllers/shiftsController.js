@@ -45,7 +45,8 @@ const SHIFT_NOTIFICATION_WEEKDAY_FORMATTER = new Intl.DateTimeFormat('he-IL', {
   weekday: 'long',
 });
 const SHIFT_ASSIGNMENT_TEMPLATE_NAME =
-  process.env.WHATSAPP_SHIFT_ASSIGNMENT_TEMPLATE_NAME || 'shift_assignment';
+  process.env.WHATSAPP_SHIFT_ASSIGNMENT_TEMPLATE_NAME ||
+  'shift_assignment_notification';
 const SHIFT_ASSIGNMENT_TEMPLATE_LANGUAGE_CODE =
   process.env.WHATSAPP_SHIFT_ASSIGNMENT_TEMPLATE_LANGUAGE_CODE || 'he';
 
