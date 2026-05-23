@@ -7,6 +7,10 @@ const {
   normalizeRole,
   requireActor,
 } = require('../lib/user-roles');
+const {
+  normalizeWhatsAppRecipient,
+  sendWhatsAppTemplate,
+} = require('../lib/whatsapp');
 
 const shiftStatuses = new Set(['open', 'closed', 'cancelled', 'completed']);
 const shiftTypes = new Set(['dinner', 'cleaning']);
@@ -30,6 +34,20 @@ const shiftTypesByCategory = {
   field: 'cleaning',
 };
 const DISPLAY_TIME_ZONE = 'Asia/Jerusalem';
+const SHIFT_NOTIFICATION_TIME_FORMATTER = new Intl.DateTimeFormat('he-IL', {
+  timeZone: DISPLAY_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+const SHIFT_NOTIFICATION_WEEKDAY_FORMATTER = new Intl.DateTimeFormat('he-IL', {
+  timeZone: DISPLAY_TIME_ZONE,
+  weekday: 'long',
+});
+const SHIFT_ASSIGNMENT_TEMPLATE_NAME =
+  process.env.WHATSAPP_SHIFT_ASSIGNMENT_TEMPLATE_NAME || 'shift_assignment';
+const SHIFT_ASSIGNMENT_TEMPLATE_LANGUAGE_CODE =
+  process.env.WHATSAPP_SHIFT_ASSIGNMENT_TEMPLATE_LANGUAGE_CODE || 'he';
 
 function isValidDate(value) {
   return !Number.isNaN(new Date(value).getTime());
@@ -271,6 +289,88 @@ function formatRegistrationRow(row) {
         }
       : null,
   };
+}
+
+function formatShiftNotificationTime(value) {
+  return SHIFT_NOTIFICATION_TIME_FORMATTER.format(new Date(value));
+}
+
+function formatShiftNotificationWeekday(value) {
+  return SHIFT_NOTIFICATION_WEEKDAY_FORMATTER.format(new Date(value));
+}
+
+async function sendShiftAssignmentNotifications(shift, users) {
+  const summary = {
+    attempted: 0,
+    sent: 0,
+    skippedNoPhone: 0,
+    skippedInvalidPhone: 0,
+    failed: 0,
+  };
+
+  if (!Array.isArray(users) || users.length === 0) {
+    return summary;
+  }
+
+  const notificationTasks = [];
+  const shiftStartTime = shift.start_time || shift.startTime;
+  const templateParametersBase = [
+    null,
+    shift.title,
+    formatShiftNotificationWeekday(shiftStartTime),
+    formatShiftNotificationTime(shiftStartTime),
+  ];
+
+  for (const user of users) {
+    if (!user.phone || String(user.phone).trim().length === 0) {
+      summary.skippedNoPhone += 1;
+      continue;
+    }
+
+    const normalizedPhone = normalizeWhatsAppRecipient(user.phone);
+
+    if (!normalizedPhone) {
+      summary.skippedInvalidPhone += 1;
+      continue;
+    }
+
+    summary.attempted += 1;
+    notificationTasks.push(
+      sendWhatsAppTemplate({
+        to: normalizedPhone,
+        name: SHIFT_ASSIGNMENT_TEMPLATE_NAME,
+        languageCode: SHIFT_ASSIGNMENT_TEMPLATE_LANGUAGE_CODE,
+        bodyParameters: [
+          user.name ? String(user.name).trim() : 'חבר קהילה',
+          templateParametersBase[1],
+          templateParametersBase[2],
+          templateParametersBase[3],
+        ],
+      })
+    );
+  }
+
+  const results = await Promise.allSettled(notificationTasks);
+
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      summary.sent += 1;
+      continue;
+    }
+
+    summary.failed += 1;
+    console.error('Failed to send shift assignment WhatsApp notification:', result.reason);
+  }
+
+  return summary;
+}
+
+function buildShiftAssignmentResponseMessage(notificationSummary) {
+  if (!notificationSummary || notificationSummary.sent === 0) {
+    return 'Shift assignments updated successfully.';
+  }
+
+  return `Shift assignments updated successfully. WhatsApp notifications sent to ${notificationSummary.sent} assigned user(s).`;
 }
 
 async function loadShiftById(shiftId, client = db) {
@@ -968,7 +1068,7 @@ async function replaceShiftAssignments(req, res, next) {
       normalizedUserIds.length === 0
         ? { rows: [] }
         : await client.query(
-            `SELECT id, role
+            `SELECT id, role, name, email, phone
              FROM public.users
              WHERE id = ANY($1::uuid[])`,
             [normalizedUserIds]
@@ -1026,6 +1126,10 @@ async function replaceShiftAssignments(req, res, next) {
     const existingRegistrationsByUserId = new Map(
       existingRegistrations.map((registration) => [registration.user_id, registration])
     );
+    const targetUsersById = new Map(
+      targetUsersResult.rows.map((user) => [user.id, user])
+    );
+    const usersToNotifyById = new Map();
 
     for (const userId of effectiveSelectedUserIds) {
       const registration = existingRegistrationsByUserId.get(userId);
@@ -1044,6 +1148,13 @@ async function replaceShiftAssignments(req, res, next) {
            VALUES ($1, $2, $3, 'pending', NULL, NULL, NULL)`,
           [randomUUID(), id, userId]
         );
+
+        const targetUser = targetUsersById.get(userId);
+
+        if (targetUser) {
+          usersToNotifyById.set(userId, targetUser);
+        }
+
         continue;
       }
 
@@ -1060,6 +1171,12 @@ async function replaceShiftAssignments(req, res, next) {
          WHERE id = $1`,
         [registration.id]
       );
+
+      const targetUser = targetUsersById.get(userId);
+
+      if (targetUser) {
+        usersToNotifyById.set(userId, targetUser);
+      }
     }
 
     const selectedUserIdsSet = new Set(effectiveSelectedUserIds);
@@ -1104,9 +1221,14 @@ async function replaceShiftAssignments(req, res, next) {
       available_slots: Math.max(Number(updatedShiftResult.rows[0].capacity) - reservedSlots, 0),
     });
     formattedShift.registrations = await loadShiftRegistrations(id);
+    const notificationSummary = await sendShiftAssignmentNotifications(
+      updatedShiftResult.rows[0],
+      Array.from(usersToNotifyById.values())
+    );
 
     return res.json({
-      message: 'Shift assignments updated successfully.',
+      message: buildShiftAssignmentResponseMessage(notificationSummary),
+      notificationSummary,
       shift: formattedShift,
     });
   } catch (error) {

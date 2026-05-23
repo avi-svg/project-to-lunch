@@ -28,6 +28,14 @@ export type ShiftRegistration = {
   reviewedBy: Omit<ShiftActor, "role"> | null;
 };
 
+export type ShiftAssignmentNotificationSummary = {
+  attempted: number;
+  sent: number;
+  skippedNoPhone: number;
+  skippedInvalidPhone: number;
+  failed: number;
+};
+
 export type Shift = {
   id: string;
   title: string;
@@ -63,6 +71,12 @@ export type WeekShiftsResponse = {
 
 export type MyRegisteredShiftsResponse = {
   shifts: Shift[];
+};
+
+export type ReplaceShiftAssignmentsResponse = {
+  message: string;
+  shift: Shift;
+  notificationSummary?: ShiftAssignmentNotificationSummary;
 };
 
 export type CreateShiftPayload = {
@@ -140,7 +154,7 @@ export async function updateShift(shiftId: string, payload: UpdateShiftPayload) 
 }
 
 export async function replaceShiftAssignments(shiftId: string, userIds: string[]) {
-  return internalApiFetch<{ message: string; shift: Shift }>(
+  return internalApiFetch<ReplaceShiftAssignmentsResponse>(
     `/api/shifts/${shiftId}/assignments`,
     {
       method: "PUT",

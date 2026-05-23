@@ -1,6 +1,7 @@
 import {
   CreateShiftPayload,
   MyRegisteredShiftsResponse,
+  ReplaceShiftAssignmentsResponse,
   Shift,
   ShiftRegistration,
   UpdateRegistrationPayload,
@@ -115,7 +116,7 @@ export async function replaceShiftAssignmentsForUser(
   shiftId: string,
   userIds: string[],
 ) {
-  return backendShiftsFetch<{ message: string; shift: Shift }>(
+  return backendShiftsFetch<ReplaceShiftAssignmentsResponse>(
     userId,
     `/shifts/${shiftId}/assignments`,
     {
