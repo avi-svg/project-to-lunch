@@ -10,6 +10,31 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value));
 }
 
+function normalizePhoneValue(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+
+  return normalized.length > 0 ? normalized : null;
+}
+
+function isValidPhone(value) {
+  const normalized = String(value).trim();
+
+  if (!/^\+?[0-9()\-\s]+$/.test(normalized)) {
+    return false;
+  }
+
+  const digitsOnly = normalized.replace(/\D/g, '');
+  return digitsOnly.length >= 7 && digitsOnly.length <= 15;
+}
+
 let appointmentsColumnsPromise;
 let usersColumnsPromise;
 
@@ -71,6 +96,10 @@ function formatUser(row) {
     role: normalizeRole(row.role),
   };
 
+  if ('phone' in row) {
+    formatted.phone = typeof row.phone === 'string' ? row.phone : null;
+  }
+
   if ('is_active' in row) {
     formatted.isActive = row.is_active !== false;
   }
@@ -101,8 +130,15 @@ function normalizeCredentialIdentifier(value) {
 }
 
 async function loadUserById(userId, client = db) {
+  const userColumns = await getUsersColumns();
+  const selectFields = ['id', 'email', 'name', 'role'];
+
+  if (userColumns.has('phone')) {
+    selectFields.push('phone');
+  }
+
   const result = await client.query(
-    `SELECT id, email, name, role
+    `SELECT ${selectFields.join(', ')}
      FROM public.users
      WHERE id = $1
      LIMIT 1`,
@@ -211,6 +247,10 @@ async function listUsers(req, res, next) {
     const userColumns = await getUsersColumns();
     const selectFields = ['id', 'email', 'name', 'role'];
 
+    if (userColumns.has('phone')) {
+      selectFields.push('phone');
+    }
+
     if (userColumns.has('password')) {
       selectFields.push('password');
     }
@@ -236,8 +276,9 @@ async function listUsers(req, res, next) {
 }
 
 async function createUser(req, res, next) {
-  const { name, email, role, password, isActive } = req.body || {};
+  const { name, email, role, password, isActive, phone } = req.body || {};
   const normalizedRole = role === undefined ? 'user' : parseRoleInput(role);
+  const normalizedPhone = normalizePhoneValue(phone);
 
   if (typeof email !== 'string' || !isValidEmail(email)) {
     return res.status(400).json({
@@ -271,11 +312,27 @@ async function createUser(req, res, next) {
     });
   }
 
+  if (normalizedPhone !== undefined && normalizedPhone !== null && !isValidPhone(normalizedPhone)) {
+    return res.status(400).json({
+      message: 'Phone must be a valid phone number.',
+    });
+  }
+
   try {
     const userColumns = await getUsersColumns();
     const insertColumns = ['email', 'name', 'role'];
     const values = [String(email).trim().toLowerCase(), name ?? null, normalizedRole];
     const returningFields = ['id', 'email', 'name', 'role'];
+
+    if (userColumns.has('phone')) {
+      insertColumns.push('phone');
+      values.push(normalizedPhone ?? null);
+      returningFields.push('phone');
+    } else if (normalizedPhone !== undefined) {
+      return res.status(500).json({
+        message: 'Cannot store a phone number because the users.phone column is missing.',
+      });
+    }
 
     if (userColumns.has('password')) {
       insertColumns.push('password');
@@ -349,8 +406,9 @@ async function getUserById(req, res, next) {
 
 async function updateUser(req, res, next) {
   const { userId } = req.params;
-  const { name, email, role, password, isActive } = req.body || {};
+  const { name, email, role, password, isActive, phone } = req.body || {};
   const isStaffActor = isStaffLike(req.actor?.role);
+  const normalizedPhone = normalizePhoneValue(phone);
 
   if (!isValidUuid(userId)) {
     return res.status(400).json({
@@ -369,7 +427,8 @@ async function updateUser(req, res, next) {
     email === undefined &&
     role === undefined &&
     password === undefined &&
-    isActive === undefined
+    isActive === undefined &&
+    phone === undefined
   ) {
     return res.status(400).json({
       message: 'At least one editable field is required.',
@@ -422,6 +481,23 @@ async function updateUser(req, res, next) {
   try {
     const userColumns = await getUsersColumns();
 
+    if (phone !== undefined) {
+      if (!userColumns.has('phone')) {
+        return res.status(500).json({
+          message: 'Cannot update phone because the users.phone column is missing.',
+        });
+      }
+
+      if (normalizedPhone !== null && !isValidPhone(normalizedPhone)) {
+        return res.status(400).json({
+          message: 'Phone must be a valid phone number.',
+        });
+      }
+
+      values.push(normalizedPhone);
+      updates.push(`phone = $${values.length}`);
+    }
+
     if (password !== undefined) {
       if (!userColumns.has('password')) {
         return res.status(500).json({
@@ -464,6 +540,10 @@ async function updateUser(req, res, next) {
 
     values.push(userId);
     const returningFields = ['id', 'email', 'name', 'role'];
+
+    if (userColumns.has('phone')) {
+      returningFields.push('phone');
+    }
 
     if (userColumns.has('password')) {
       returningFields.push('password');
@@ -668,6 +748,10 @@ async function upsertOAuthUser(req, res, next) {
     const userColumns = await getUsersColumns();
     const selectFields = ['id', 'email', 'name', 'role'];
 
+    if (userColumns.has('phone')) {
+      selectFields.push('phone');
+    }
+
     if (userColumns.has('is_active')) {
       selectFields.push('is_active');
     }
@@ -693,6 +777,12 @@ async function upsertOAuthUser(req, res, next) {
     const insertValues = [normalizedEmail, name ?? null, 'user'];
     const returningFields = ['id', 'email', 'name', 'role'];
 
+    if (userColumns.has('phone')) {
+      insertColumns.push('phone');
+      insertValues.push(null);
+      returningFields.push('phone');
+    }
+
     if (userColumns.has('is_active')) {
       insertColumns.push('is_active');
       insertValues.push(true);
@@ -714,6 +804,10 @@ async function upsertOAuthUser(req, res, next) {
       try {
         const userColumns = await getUsersColumns();
         const selectFields = ['id', 'email', 'name', 'role'];
+
+        if (userColumns.has('phone')) {
+          selectFields.push('phone');
+        }
 
         if (userColumns.has('is_active')) {
           selectFields.push('is_active');

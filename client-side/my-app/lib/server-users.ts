@@ -5,6 +5,7 @@ export type BackendDirectoryUser = {
   email: string;
   name: string | null;
   role: UserRole;
+  phone?: string | null;
   isActive?: boolean;
   hasPassword?: boolean;
 };
@@ -37,6 +38,7 @@ export type CreateBackendUserPayload = {
   email: string;
   name?: string | null;
   role?: UserRole;
+  phone?: string | null;
   password?: string;
   isActive?: boolean;
 };
@@ -44,6 +46,7 @@ export type CreateBackendUserPayload = {
 export type UpdateBackendUserPayload = {
   email?: string;
   name?: string | null;
+  phone?: string | null;
   password?: string | null;
   isActive?: boolean;
 };
@@ -91,6 +94,7 @@ function normalizeDirectoryUser(value: unknown): BackendDirectoryUser | null {
     email: candidate.email,
     name: typeof candidate.name === "string" ? candidate.name : null,
     role,
+    phone: typeof candidate.phone === "string" ? candidate.phone : null,
     isActive:
       typeof candidate.isActive === "boolean" ? candidate.isActive : undefined,
     hasPassword:

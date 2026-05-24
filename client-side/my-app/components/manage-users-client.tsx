@@ -13,6 +13,7 @@ type CreateFormState = {
   name: string;
   email: string;
   role: BackendDirectoryUser["role"];
+  phone: string;
   password: string;
   isActive: boolean;
 };
@@ -51,6 +52,7 @@ function createInitialFormState(): CreateFormState {
     name: "",
     email: "",
     role: "user",
+    phone: "",
     password: "",
     isActive: true,
   };
@@ -81,6 +83,7 @@ function UserCard({ user, onUserUpdated }: UserCardProps) {
   const [isPending, startTransition] = useTransition();
   const [name, setName] = useState(user.name ?? "");
   const [email, setEmail] = useState(user.email);
+  const [phone, setPhone] = useState(user.phone ?? "");
   const [role, setRole] = useState<BackendDirectoryUser["role"]>(
     user.role === "admin" ? "staff" : user.role,
   );
@@ -128,6 +131,7 @@ function UserCard({ user, onUserUpdated }: UserCardProps) {
     const payload: Record<string, unknown> = {
       name: name.trim() || null,
       email: email.trim(),
+      phone: phone.trim() || null,
       role,
       isActive,
     };
@@ -152,6 +156,7 @@ function UserCard({ user, onUserUpdated }: UserCardProps) {
               {name || "ללא שם"}
             </p>
             <p className="text-sm text-stone-600">{email}</p>
+            <p className="text-sm text-stone-500">{phone || "ללא טלפון"}</p>
             <p className="mt-1 text-xs text-stone-500">ID: {user.id}</p>
           </div>
 
@@ -197,6 +202,19 @@ function UserCard({ user, onUserUpdated }: UserCardProps) {
               onChange={(event) => setEmail(event.target.value)}
               className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
               placeholder="name@example.com"
+            />
+          </label>
+
+          <label className="space-y-2">
+            <span className="block text-sm font-medium text-stone-700">
+              טלפון
+            </span>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
+              placeholder="050-1234567"
             />
           </label>
 
@@ -324,6 +342,7 @@ export function ManageUsersClient({ initialUsers }: Props) {
           name: createForm.name.trim() || null,
           email: createForm.email.trim(),
           role: createForm.role,
+          phone: createForm.phone.trim() || null,
           isActive: createForm.isActive,
           ...(createForm.password.trim()
             ? { password: createForm.password }
@@ -464,6 +483,24 @@ export function ManageUsersClient({ initialUsers }: Props) {
                   className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
                   placeholder="name@example.com"
                   required
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="block text-sm font-medium text-stone-700">
+                  טלפון
+                </span>
+                <input
+                  type="tel"
+                  value={createForm.phone}
+                  onChange={(event) =>
+                    setCreateForm((current) => ({
+                      ...current,
+                      phone: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
+                  placeholder="050-1234567"
                 />
               </label>
 
