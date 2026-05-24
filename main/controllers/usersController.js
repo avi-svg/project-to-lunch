@@ -4,12 +4,14 @@ const {
   isValidUuid,
   normalizeRole,
 } = require('../lib/user-roles');
+const { hashPassword, verifyPassword } = require('../lib/passwords');
 
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value));
 }
 
 let appointmentsColumnsPromise;
+let usersColumnsPromise;
 
 async function getAppointmentsColumns() {
   if (!appointmentsColumnsPromise) {
@@ -30,6 +32,25 @@ async function getAppointmentsColumns() {
   return appointmentsColumnsPromise;
 }
 
+async function getUsersColumns() {
+  if (!usersColumnsPromise) {
+    usersColumnsPromise = db
+      .query(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'users'`
+      )
+      .then((result) => new Set(result.rows.map((row) => row.column_name)))
+      .catch((error) => {
+        usersColumnsPromise = null;
+        throw error;
+      });
+  }
+
+  return usersColumnsPromise;
+}
+
 function mapStatus(status) {
   if (status === 'booked') {
     return 'confirmed';
@@ -43,12 +64,22 @@ function mapStatus(status) {
 }
 
 function formatUser(row) {
-  return {
+  const formatted = {
     id: row.id,
     email: row.email,
     name: row.name,
     role: normalizeRole(row.role),
   };
+
+  if ('is_active' in row) {
+    formatted.isActive = row.is_active !== false;
+  }
+
+  if ('password' in row) {
+    formatted.hasPassword = typeof row.password === 'string' && row.password.length > 0;
+  }
+
+  return formatted;
 }
 
 function canAccessUser(actor, userId) {
@@ -96,8 +127,22 @@ async function authenticateCredentialsUser(req, res, next) {
   }
 
   try {
+    const userColumns = await getUsersColumns();
+
+    if (!userColumns.has('password')) {
+      return res.status(500).json({
+        message: 'Credential sign-in is unavailable because the users.password column is missing.',
+      });
+    }
+
+    const selectFields = ['id', 'email', 'name', 'password', 'role'];
+
+    if (userColumns.has('is_active')) {
+      selectFields.push('is_active');
+    }
+
     const result = await db.query(
-      `SELECT id, email, name, password, role, is_active
+      `SELECT ${selectFields.join(', ')}
        FROM public.users
        WHERE LOWER(email) = $1
           OR LOWER(COALESCE(name, '')) = $1
@@ -119,7 +164,9 @@ async function authenticateCredentialsUser(req, res, next) {
       });
     }
 
-    if (user.password !== password) {
+    const isPasswordValid = await verifyPassword(password, user.password);
+
+    if (!isPasswordValid) {
       return res.status(401).json({
         message: 'Invalid username or password.',
       });
@@ -161,8 +208,19 @@ async function listUsers(req, res, next) {
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   try {
+    const userColumns = await getUsersColumns();
+    const selectFields = ['id', 'email', 'name', 'role'];
+
+    if (userColumns.has('password')) {
+      selectFields.push('password');
+    }
+
+    if (userColumns.has('is_active')) {
+      selectFields.push('is_active');
+    }
+
     const result = await db.query(
-      `SELECT id, email, name, role
+      `SELECT ${selectFields.join(', ')}
        FROM public.users
        ${whereClause}
        ORDER BY COALESCE(name, email) ASC, email ASC`,
@@ -173,6 +231,88 @@ async function listUsers(req, res, next) {
       users: result.rows.map(formatUser),
     });
   } catch (error) {
+    return next(error);
+  }
+}
+
+async function createUser(req, res, next) {
+  const { name, email, role, password, isActive } = req.body || {};
+  const normalizedRole = role === undefined ? 'user' : parseRoleInput(role);
+
+  if (typeof email !== 'string' || !isValidEmail(email)) {
+    return res.status(400).json({
+      message: 'Email must be a valid email address.',
+    });
+  }
+
+  if (normalizedRole === null) {
+    return res.status(400).json({
+      message: 'role must be either user or staff.',
+    });
+  }
+
+  if (name !== undefined && name !== null && String(name).trim().length === 0) {
+    return res.status(400).json({
+      message: 'name cannot be empty.',
+    });
+  }
+
+  if (password !== undefined && password !== null) {
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({
+        message: 'Password must be at least 8 characters long.',
+      });
+    }
+  }
+
+  if (isActive !== undefined && typeof isActive !== 'boolean') {
+    return res.status(400).json({
+      message: 'isActive must be a boolean value.',
+    });
+  }
+
+  try {
+    const userColumns = await getUsersColumns();
+    const insertColumns = ['email', 'name', 'role'];
+    const values = [String(email).trim().toLowerCase(), name ?? null, normalizedRole];
+    const returningFields = ['id', 'email', 'name', 'role'];
+
+    if (userColumns.has('password')) {
+      insertColumns.push('password');
+      values.push(password ? await hashPassword(password) : null);
+      returningFields.push('password');
+    } else if (password) {
+      return res.status(500).json({
+        message: 'Cannot store a password because the users.password column is missing.',
+      });
+    }
+
+    if (userColumns.has('is_active')) {
+      insertColumns.push('is_active');
+      values.push(isActive ?? true);
+      returningFields.push('is_active');
+    }
+
+    const placeholders = insertColumns.map((_, index) => `$${index + 1}`);
+
+    const result = await db.query(
+      `INSERT INTO public.users (${insertColumns.join(', ')})
+       VALUES (${placeholders.join(', ')})
+       RETURNING ${returningFields.join(', ')}`,
+      values
+    );
+
+    return res.status(201).json({
+      message: 'User created successfully.',
+      user: formatUser(result.rows[0]),
+    });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({
+        message: 'A user with this email already exists.',
+      });
+    }
+
     return next(error);
   }
 }
@@ -209,7 +349,7 @@ async function getUserById(req, res, next) {
 
 async function updateUser(req, res, next) {
   const { userId } = req.params;
-  const { name, email, role } = req.body || {};
+  const { name, email, role, password, isActive } = req.body || {};
   const isStaffActor = isStaffLike(req.actor?.role);
 
   if (!isValidUuid(userId)) {
@@ -224,9 +364,15 @@ async function updateUser(req, res, next) {
     });
   }
 
-  if (name === undefined && email === undefined && role === undefined) {
+  if (
+    name === undefined &&
+    email === undefined &&
+    role === undefined &&
+    password === undefined &&
+    isActive === undefined
+  ) {
     return res.status(400).json({
-      message: 'At least one of name or email is required.',
+      message: 'At least one editable field is required.',
     });
   }
 
@@ -239,6 +385,12 @@ async function updateUser(req, res, next) {
   if (email !== undefined && !isStaffActor) {
     return res.status(403).json({
       message: 'Only staff users can update email addresses.',
+    });
+  }
+
+  if ((password !== undefined || isActive !== undefined) && !isStaffActor) {
+    return res.status(403).json({
+      message: 'Only staff users can update password or active status.',
     });
   }
 
@@ -267,20 +419,65 @@ async function updateUser(req, res, next) {
     updates.push(`email = $${values.length}`);
   }
 
-  if (updates.length === 0) {
-    return res.status(400).json({
-      message: 'No valid user fields were provided for update.',
-    });
-  }
-
-  values.push(userId);
-
   try {
+    const userColumns = await getUsersColumns();
+
+    if (password !== undefined) {
+      if (!userColumns.has('password')) {
+        return res.status(500).json({
+          message: 'Cannot update password because the users.password column is missing.',
+        });
+      }
+
+      if (password !== null && (typeof password !== 'string' || password.length < 8)) {
+        return res.status(400).json({
+          message: 'Password must be at least 8 characters long.',
+        });
+      }
+
+      values.push(password === null ? null : await hashPassword(password));
+      updates.push(`password = $${values.length}`);
+    }
+
+    if (isActive !== undefined) {
+      if (!userColumns.has('is_active')) {
+        return res.status(500).json({
+          message: 'Cannot update active status because the users.is_active column is missing.',
+        });
+      }
+
+      if (typeof isActive !== 'boolean') {
+        return res.status(400).json({
+          message: 'isActive must be a boolean value.',
+        });
+      }
+
+      values.push(isActive);
+      updates.push(`is_active = $${values.length}`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        message: 'No valid user fields were provided for update.',
+      });
+    }
+
+    values.push(userId);
+    const returningFields = ['id', 'email', 'name', 'role'];
+
+    if (userColumns.has('password')) {
+      returningFields.push('password');
+    }
+
+    if (userColumns.has('is_active')) {
+      returningFields.push('is_active');
+    }
+
     const result = await db.query(
       `UPDATE public.users
        SET ${updates.join(', ')}
        WHERE id = $${values.length}
-       RETURNING id, email, name, role`,
+       RETURNING ${returningFields.join(', ')}`,
       values
     );
 
@@ -453,50 +650,89 @@ async function getUserDashboardAppointments(req, res, next) {
 
 async function upsertOAuthUser(req, res, next) {
   const { email, name } = req.body;
+  const normalizedEmail = typeof email === 'string' ? String(email).trim().toLowerCase() : '';
 
-  if (!email || typeof email !== 'string') {
+  if (!normalizedEmail) {
     return res.status(400).json({
       message: 'Email is required.',
     });
   }
 
-  if (!isValidEmail(email)) {
+  if (!isValidEmail(normalizedEmail)) {
     return res.status(400).json({
       message: 'Email must be a valid email address.',
     });
   }
 
   try {
+    const userColumns = await getUsersColumns();
+    const selectFields = ['id', 'email', 'name', 'role'];
+
+    if (userColumns.has('is_active')) {
+      selectFields.push('is_active');
+    }
+
     const existingResult = await db.query(
-      `SELECT id, email, name, role
+      `SELECT ${selectFields.join(', ')}
        FROM users
        WHERE email = $1`,
-      [email]
+      [normalizedEmail]
     );
 
     if (existingResult.rows.length > 0) {
+      if (existingResult.rows[0].is_active === false) {
+        return res.status(403).json({
+          message: 'This user account is inactive.',
+        });
+      }
+
       return res.status(200).json(formatUser(existingResult.rows[0]));
     }
 
+    const insertColumns = ['email', 'name', 'role'];
+    const insertValues = [normalizedEmail, name ?? null, 'user'];
+    const returningFields = ['id', 'email', 'name', 'role'];
+
+    if (userColumns.has('is_active')) {
+      insertColumns.push('is_active');
+      insertValues.push(true);
+      returningFields.push('is_active');
+    }
+
+    const placeholders = insertColumns.map((_, index) => `$${index + 1}`);
+
     const insertResult = await db.query(
-      `INSERT INTO users (email, name, role)
-       VALUES ($1, $2, 'user')
-       RETURNING id, email, name, role`,
-      [email, name ?? null]
+      `INSERT INTO users (${insertColumns.join(', ')})
+       VALUES (${placeholders.join(', ')})
+       RETURNING ${returningFields.join(', ')}`,
+      insertValues
     );
 
     return res.status(200).json(formatUser(insertResult.rows[0]));
   } catch (error) {
     if (error.code === '23505') {
       try {
+        const userColumns = await getUsersColumns();
+        const selectFields = ['id', 'email', 'name', 'role'];
+
+        if (userColumns.has('is_active')) {
+          selectFields.push('is_active');
+        }
+
         const conflictResult = await db.query(
-          `SELECT id, email, name, role
+          `SELECT ${selectFields.join(', ')}
            FROM users
            WHERE email = $1`,
-          [email]
+          [normalizedEmail]
         );
 
         if (conflictResult.rows.length > 0) {
+          if (conflictResult.rows[0].is_active === false) {
+            return res.status(403).json({
+              message: 'This user account is inactive.',
+            });
+          }
+
           return res.status(200).json(formatUser(conflictResult.rows[0]));
         }
       } catch (lookupError) {
@@ -513,6 +749,7 @@ async function upsertOAuthUser(req, res, next) {
 
 module.exports = {
   authenticateCredentialsUser,
+  createUser,
   getUserById,
   upsertOAuthUser,
   getUserDashboardAppointments,

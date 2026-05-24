@@ -5,6 +5,8 @@ export type BackendDirectoryUser = {
   email: string;
   name: string | null;
   role: UserRole;
+  isActive?: boolean;
+  hasPassword?: boolean;
 };
 
 type BackendUsersEnvelope =
@@ -29,6 +31,39 @@ export class BackendUsersError extends Error {
     this.name = "BackendUsersError";
     this.status = status;
   }
+}
+
+export type CreateBackendUserPayload = {
+  email: string;
+  name?: string | null;
+  role?: UserRole;
+  password?: string;
+  isActive?: boolean;
+};
+
+export type UpdateBackendUserPayload = {
+  email?: string;
+  name?: string | null;
+  password?: string | null;
+  isActive?: boolean;
+};
+
+function extractUserFromPayload(data: unknown, fallbackMessage: string) {
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !("user" in data)
+  ) {
+    throw new BackendUsersError(fallbackMessage, 502);
+  }
+
+  const user = normalizeDirectoryUser(data.user);
+
+  if (!user) {
+    throw new BackendUsersError(fallbackMessage, 502);
+  }
+
+  return user;
 }
 
 function normalizeUserRole(role: unknown): UserRole | null {
@@ -56,6 +91,12 @@ function normalizeDirectoryUser(value: unknown): BackendDirectoryUser | null {
     email: candidate.email,
     name: typeof candidate.name === "string" ? candidate.name : null,
     role,
+    isActive:
+      typeof candidate.isActive === "boolean" ? candidate.isActive : undefined,
+    hasPassword:
+      typeof candidate.hasPassword === "boolean"
+        ? candidate.hasPassword
+        : undefined,
   };
 }
 
@@ -131,7 +172,105 @@ async function backendUsersFetch(path: string) {
   return data;
 }
 
+async function backendUsersFetchForActor(
+  userId: string,
+  path: string,
+  options: RequestInit = {},
+) {
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        "x-acting-user-id": userId,
+        ...options.headers,
+      },
+    });
+  } catch {
+    throw new BackendUsersError(
+      `Unable to reach the backend at ${API_BASE_URL}.`,
+      503,
+    );
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const isJson = contentType.includes("application/json");
+  const data = isJson ? await response.json() : await response.text();
+
+  if (!response.ok) {
+    const fallbackMessage =
+      typeof data === "string" && data.trim().length > 0
+        ? data.trim()
+        : `Backend request failed with status ${response.status}.`;
+    const message =
+      typeof data === "object" &&
+      data !== null &&
+      "message" in data &&
+      typeof data.message === "string"
+        ? data.message
+        : fallbackMessage;
+
+    throw new BackendUsersError(message, response.status);
+  }
+
+  return data;
+}
+
 export async function fetchAllBackendUsers() {
   const data = await backendUsersFetch("/users");
   return normalizeUsersPayload(data);
+}
+
+export async function createBackendUserForActor(
+  actorUserId: string,
+  payload: CreateBackendUserPayload,
+) {
+  const data = await backendUsersFetchForActor(actorUserId, "/users", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  return extractUserFromPayload(
+    data,
+    "Backend create user response has an unexpected shape.",
+  );
+}
+
+export async function updateBackendUserForActor(
+  actorUserId: string,
+  userId: string,
+  payload: UpdateBackendUserPayload,
+) {
+  const data = await backendUsersFetchForActor(actorUserId, `/users/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+
+  return extractUserFromPayload(
+    data,
+    "Backend update user response has an unexpected shape.",
+  );
+}
+
+export async function updateBackendUserRoleForActor(
+  actorUserId: string,
+  userId: string,
+  role: UserRole,
+) {
+  const data = await backendUsersFetchForActor(
+    actorUserId,
+    `/users/${userId}/role`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    },
+  );
+
+  return extractUserFromPayload(
+    data,
+    "Backend update role response has an unexpected shape.",
+  );
 }

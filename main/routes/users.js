@@ -10,6 +10,7 @@ const router = express.Router();
 
 router.post('/login', usersController.authenticateCredentialsUser);
 router.post('/oauth', usersController.upsertOAuthUser);
+router.post('/', requireActor, requireStaff, usersController.createUser);
 router.get('/', requireStaffOrInternalApiKey, usersController.listUsers);
 router.get('/:userId/appointments', requireActor, usersController.getUserDashboardAppointments);
 router.patch('/:userId/role', requireActor, requireStaff, usersController.updateUserRole);
