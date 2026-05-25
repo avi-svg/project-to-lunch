@@ -14,6 +14,7 @@ type CreateFormState = {
   email: string;
   role: BackendDirectoryUser["role"];
   phone: string;
+  birthDate: string;
   password: string;
   isActive: boolean;
 };
@@ -53,6 +54,7 @@ function createInitialFormState(): CreateFormState {
     email: "",
     role: "user",
     phone: "",
+    birthDate: "",
     password: "",
     isActive: true,
   };
@@ -84,6 +86,7 @@ function UserCard({ user, onUserUpdated }: UserCardProps) {
   const [name, setName] = useState(user.name ?? "");
   const [email, setEmail] = useState(user.email);
   const [phone, setPhone] = useState(user.phone ?? "");
+  const [birthDate, setBirthDate] = useState(user.birthDate ?? "");
   const [role, setRole] = useState<BackendDirectoryUser["role"]>(
     user.role === "admin" ? "staff" : user.role,
   );
@@ -111,6 +114,11 @@ function UserCard({ user, onUserUpdated }: UserCardProps) {
 
         const updatedUser = result.user as BackendDirectoryUser;
         onUserUpdated(updatedUser);
+        setName(updatedUser.name ?? "");
+        setEmail(updatedUser.email);
+        setPhone(updatedUser.phone ?? "");
+        setBirthDate(updatedUser.birthDate ?? "");
+        setIsActive(updatedUser.isActive ?? true);
         if (updatedUser.hasPassword !== undefined) {
           setHasPassword(updatedUser.hasPassword);
         }
@@ -132,6 +140,7 @@ function UserCard({ user, onUserUpdated }: UserCardProps) {
       name: name.trim() || null,
       email: email.trim(),
       phone: phone.trim() || null,
+      birthDate: birthDate || null,
       role,
       isActive,
     };
@@ -157,6 +166,9 @@ function UserCard({ user, onUserUpdated }: UserCardProps) {
             </p>
             <p className="text-sm text-stone-600">{email}</p>
             <p className="text-sm text-stone-500">{phone || "ללא טלפון"}</p>
+            <p className="text-sm text-stone-500">
+              {birthDate || "ללא תאריך לידה"}
+            </p>
             <p className="mt-1 text-xs text-stone-500">ID: {user.id}</p>
           </div>
 
@@ -219,6 +231,18 @@ function UserCard({ user, onUserUpdated }: UserCardProps) {
           </label>
 
           <label className="space-y-2">
+            <span className="block text-sm font-medium text-stone-700">
+              תאריך לידה
+            </span>
+            <input
+              type="date"
+              value={birthDate}
+              onChange={(event) => setBirthDate(event.target.value)}
+              className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
+            />
+          </label>
+
+          <label className="space-y-2">
             <span className="block text-sm font-medium text-stone-700">תפקיד</span>
             <select
               value={role}
@@ -270,8 +294,8 @@ function UserCard({ user, onUserUpdated }: UserCardProps) {
         </div>
 
         <p className="text-xs leading-6 text-stone-500">
-          אם נשמרת סיסמה, המשתמש יוכל להיכנס גם עם טופס הסיסמה במסך הבית. אם
-          השדה ריק, המשתמש נשאר ללא סיסמה ויוכל להשתמש בהתחברות Google לפי
+          אם נשמרת סיסמה, המשתמש יוכל להיכנס גם דרך טופס הסיסמה במסך הבית. אם
+          השדה ריק, המשתמש יישאר ללא סיסמה ויוכל להשתמש בהתחברות Google לפי
           האימייל שלו.
         </p>
 
@@ -343,6 +367,7 @@ export function ManageUsersClient({ initialUsers }: Props) {
           email: createForm.email.trim(),
           role: createForm.role,
           phone: createForm.phone.trim() || null,
+          birthDate: createForm.birthDate || null,
           isActive: createForm.isActive,
           ...(createForm.password.trim()
             ? { password: createForm.password }
@@ -402,7 +427,7 @@ export function ManageUsersClient({ initialUsers }: Props) {
             </h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
               אפשר ליצור כאן משתמשים ידנית, לקבוע מי פעיל, להוסיף או להסיר
-              סיסמה, ולעדכן תפקידים מבלי לחכות שמשתמש יתחבר בפעם הראשונה.
+              סיסמה, לעדכן תפקידים, טלפון ותאריך לידה.
             </p>
           </div>
         </section>
@@ -501,6 +526,23 @@ export function ManageUsersClient({ initialUsers }: Props) {
                   }
                   className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
                   placeholder="050-1234567"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="block text-sm font-medium text-stone-700">
+                  תאריך לידה
+                </span>
+                <input
+                  type="date"
+                  value={createForm.birthDate}
+                  onChange={(event) =>
+                    setCreateForm((current) => ({
+                      ...current,
+                      birthDate: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
                 />
               </label>
 
