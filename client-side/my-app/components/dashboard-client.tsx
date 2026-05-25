@@ -18,6 +18,7 @@ type NavigationLink = {
 
 const navigationLinks: readonly NavigationLink[] = [
   { href: "/main-schedule", label: "לוח זמנים ראשי" },
+  { href: "/birthdays", label: "ימי הולדת" },
   { href: "/manage-shifts", label: "תורנויות ופעילויות", staffOnly: true },
   { href: "/staff-shifts", label: "אזור משמרות צוות", staffOnly: true },
   { href: "/staff-zone", label: "אזור צוות", staffOnly: true },

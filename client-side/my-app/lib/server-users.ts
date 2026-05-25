@@ -6,8 +6,17 @@ export type BackendDirectoryUser = {
   name: string | null;
   role: UserRole;
   phone?: string | null;
+  birthDate?: string | null;
   isActive?: boolean;
   hasPassword?: boolean;
+};
+
+export type BirthdayGreeting = {
+  id: string;
+  message: string;
+  createdAt: string;
+  authorId: string;
+  authorName: string;
 };
 
 type BackendUsersEnvelope =
@@ -39,6 +48,7 @@ export type CreateBackendUserPayload = {
   name?: string | null;
   role?: UserRole;
   phone?: string | null;
+  birthDate?: string | null;
   password?: string;
   isActive?: boolean;
 };
@@ -47,6 +57,7 @@ export type UpdateBackendUserPayload = {
   email?: string;
   name?: string | null;
   phone?: string | null;
+  birthDate?: string | null;
   password?: string | null;
   isActive?: boolean;
 };
@@ -73,6 +84,26 @@ function normalizeUserRole(role: unknown): UserRole | null {
   return role === "admin" || role === "staff" || role === "user" ? role : null;
 }
 
+function normalizeBirthDate(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return normalized;
+  }
+
+  const match = /^(\d{4}-\d{2}-\d{2})T/.exec(normalized);
+
+  if (match) {
+    return match[1];
+  }
+
+  return null;
+}
+
 function normalizeDirectoryUser(value: unknown): BackendDirectoryUser | null {
   if (typeof value !== "object" || value === null) {
     return null;
@@ -95,6 +126,7 @@ function normalizeDirectoryUser(value: unknown): BackendDirectoryUser | null {
     name: typeof candidate.name === "string" ? candidate.name : null,
     role,
     phone: typeof candidate.phone === "string" ? candidate.phone : null,
+    birthDate: normalizeBirthDate(candidate.birthDate ?? candidate.birth_date),
     isActive:
       typeof candidate.isActive === "boolean" ? candidate.isActive : undefined,
     hasPassword:
@@ -277,4 +309,97 @@ export async function updateBackendUserRoleForActor(
     data,
     "Backend update role response has an unexpected shape.",
   );
+}
+
+function normalizeBirthdayGreeting(value: unknown): BirthdayGreeting | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  if (
+    typeof candidate.id !== "string" ||
+    typeof candidate.message !== "string" ||
+    typeof candidate.createdAt !== "string" ||
+    typeof candidate.authorId !== "string" ||
+    typeof candidate.authorName !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    id: candidate.id,
+    message: candidate.message,
+    createdAt: candidate.createdAt,
+    authorId: candidate.authorId,
+    authorName: candidate.authorName,
+  };
+}
+
+function normalizeBirthdayGreetingsPayload(payload: unknown) {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("greetings" in payload) ||
+    !Array.isArray(payload.greetings)
+  ) {
+    throw new BackendUsersError(
+      "Backend birthday greetings response has an unexpected shape.",
+      502,
+    );
+  }
+
+  return payload.greetings
+    .map((greeting) => normalizeBirthdayGreeting(greeting))
+    .filter((greeting): greeting is BirthdayGreeting => Boolean(greeting));
+}
+
+export async function fetchBirthdayGreetingsForActor(
+  actorUserId: string,
+  userId: string,
+) {
+  const data = await backendUsersFetchForActor(
+    actorUserId,
+    `/users/${userId}/birthday-greetings`,
+  );
+
+  return normalizeBirthdayGreetingsPayload(data);
+}
+
+export async function createBirthdayGreetingForActor(
+  actorUserId: string,
+  userId: string,
+  message: string,
+) {
+  const data = await backendUsersFetchForActor(
+    actorUserId,
+    `/users/${userId}/birthday-greetings`,
+    {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    },
+  );
+
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !("greeting" in data)
+  ) {
+    throw new BackendUsersError(
+      "Backend create birthday greeting response has an unexpected shape.",
+      502,
+    );
+  }
+
+  const greeting = normalizeBirthdayGreeting(data.greeting);
+
+  if (!greeting) {
+    throw new BackendUsersError(
+      "Backend create birthday greeting response has an unexpected shape.",
+      502,
+    );
+  }
+
+  return greeting;
 }

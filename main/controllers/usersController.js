@@ -35,6 +35,59 @@ function isValidPhone(value) {
   return digitsOnly.length >= 7 && digitsOnly.length <= 15;
 }
 
+function normalizeBirthDateValue(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function isValidBirthDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+    return false;
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function normalizeGreetingMessage(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function formatBirthDateValue(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      return normalized;
+    }
+
+    const parsedDate = new Date(normalized);
+
+    if (!Number.isNaN(parsedDate.getTime())) {
+      return parsedDate.toISOString().slice(0, 10);
+    }
+  }
+
+  return null;
+}
+
 let appointmentsColumnsPromise;
 let usersColumnsPromise;
 
@@ -108,6 +161,10 @@ function formatUser(row) {
     formatted.hasPassword = typeof row.password === 'string' && row.password.length > 0;
   }
 
+  if ('birth_date' in row) {
+    formatted.birthDate = formatBirthDateValue(row.birth_date);
+  }
+
   return formatted;
 }
 
@@ -135,6 +192,10 @@ async function loadUserById(userId, client = db) {
 
   if (userColumns.has('phone')) {
     selectFields.push('phone');
+  }
+
+  if (userColumns.has('birth_date')) {
+    selectFields.push('birth_date');
   }
 
   const result = await client.query(
@@ -251,6 +312,10 @@ async function listUsers(req, res, next) {
       selectFields.push('phone');
     }
 
+    if (userColumns.has('birth_date')) {
+      selectFields.push('birth_date');
+    }
+
     if (userColumns.has('password')) {
       selectFields.push('password');
     }
@@ -276,9 +341,10 @@ async function listUsers(req, res, next) {
 }
 
 async function createUser(req, res, next) {
-  const { name, email, role, password, isActive, phone } = req.body || {};
+  const { name, email, role, password, isActive, phone, birthDate } = req.body || {};
   const normalizedRole = role === undefined ? 'user' : parseRoleInput(role);
   const normalizedPhone = normalizePhoneValue(phone);
+  const normalizedBirthDate = normalizeBirthDateValue(birthDate);
 
   if (typeof email !== 'string' || !isValidEmail(email)) {
     return res.status(400).json({
@@ -318,6 +384,12 @@ async function createUser(req, res, next) {
     });
   }
 
+  if (normalizedBirthDate !== undefined && normalizedBirthDate !== null && !isValidBirthDate(normalizedBirthDate)) {
+    return res.status(400).json({
+      message: 'birthDate must be a valid date in YYYY-MM-DD format.',
+    });
+  }
+
   try {
     const userColumns = await getUsersColumns();
     const insertColumns = ['email', 'name', 'role'];
@@ -331,6 +403,16 @@ async function createUser(req, res, next) {
     } else if (normalizedPhone !== undefined) {
       return res.status(500).json({
         message: 'Cannot store a phone number because the users.phone column is missing.',
+      });
+    }
+
+    if (userColumns.has('birth_date')) {
+      insertColumns.push('birth_date');
+      values.push(normalizedBirthDate ?? null);
+      returningFields.push('birth_date');
+    } else if (normalizedBirthDate !== undefined) {
+      return res.status(500).json({
+        message: 'Cannot store a birth date because the users.birth_date column is missing.',
       });
     }
 
@@ -406,9 +488,10 @@ async function getUserById(req, res, next) {
 
 async function updateUser(req, res, next) {
   const { userId } = req.params;
-  const { name, email, role, password, isActive, phone } = req.body || {};
+  const { name, email, role, password, isActive, phone, birthDate } = req.body || {};
   const isStaffActor = isStaffLike(req.actor?.role);
   const normalizedPhone = normalizePhoneValue(phone);
+  const normalizedBirthDate = normalizeBirthDateValue(birthDate);
 
   if (!isValidUuid(userId)) {
     return res.status(400).json({
@@ -428,7 +511,8 @@ async function updateUser(req, res, next) {
     role === undefined &&
     password === undefined &&
     isActive === undefined &&
-    phone === undefined
+    phone === undefined &&
+    birthDate === undefined
   ) {
     return res.status(400).json({
       message: 'At least one editable field is required.',
@@ -478,6 +562,14 @@ async function updateUser(req, res, next) {
     updates.push(`email = $${values.length}`);
   }
 
+  if (birthDate !== undefined) {
+    if (normalizedBirthDate !== null && !isValidBirthDate(normalizedBirthDate)) {
+      return res.status(400).json({
+        message: 'birthDate must be a valid date in YYYY-MM-DD format.',
+      });
+    }
+  }
+
   try {
     const userColumns = await getUsersColumns();
 
@@ -496,6 +588,17 @@ async function updateUser(req, res, next) {
 
       values.push(normalizedPhone);
       updates.push(`phone = $${values.length}`);
+    }
+
+    if (birthDate !== undefined) {
+      if (!userColumns.has('birth_date')) {
+        return res.status(500).json({
+          message: 'Cannot update birth date because the users.birth_date column is missing.',
+        });
+      }
+
+      values.push(normalizedBirthDate);
+      updates.push(`birth_date = $${values.length}`);
     }
 
     if (password !== undefined) {
@@ -543,6 +646,10 @@ async function updateUser(req, res, next) {
 
     if (userColumns.has('phone')) {
       returningFields.push('phone');
+    }
+
+    if (userColumns.has('birth_date')) {
+      returningFields.push('birth_date');
     }
 
     if (userColumns.has('password')) {
@@ -728,6 +835,111 @@ async function getUserDashboardAppointments(req, res, next) {
   }
 }
 
+async function listBirthdayGreetings(req, res, next) {
+  const { userId } = req.params;
+
+  if (!isValidUuid(userId)) {
+    return res.status(400).json({
+      message: 'userId must be a valid UUID.',
+    });
+  }
+
+  try {
+    const recipient = await loadUserById(userId);
+
+    if (!recipient || recipient.role !== 'user') {
+      return res.status(404).json({
+        message: 'Birthday board user not found.',
+      });
+    }
+
+    const result = await db.query(
+      `SELECT
+         g.id,
+         g.message,
+         g.created_at AS "createdAt",
+         author.id AS "authorId",
+         COALESCE(author.name, author.email, 'Someone') AS "authorName"
+       FROM public.birthday_greetings g
+       JOIN public.users author
+         ON author.id = g.author_user_id
+       WHERE g.user_id = $1
+       ORDER BY g.created_at DESC`,
+      [userId]
+    );
+
+    return res.json({
+      greetings: result.rows,
+    });
+  } catch (error) {
+    if (error.code === '42P01') {
+      return res.status(500).json({
+        message: 'The birthday_greetings table is missing from the database.',
+      });
+    }
+
+    return next(error);
+  }
+}
+
+async function createBirthdayGreeting(req, res, next) {
+  const { userId } = req.params;
+  const { message } = req.body || {};
+  const normalizedMessage = normalizeGreetingMessage(message);
+
+  if (!isValidUuid(userId)) {
+    return res.status(400).json({
+      message: 'userId must be a valid UUID.',
+    });
+  }
+
+  if (!normalizedMessage) {
+    return res.status(400).json({
+      message: 'message is required.',
+    });
+  }
+
+  if (normalizedMessage.length > 500) {
+    return res.status(400).json({
+      message: 'message must be 500 characters or fewer.',
+    });
+  }
+
+  try {
+    const recipient = await loadUserById(userId);
+
+    if (!recipient || recipient.role !== 'user') {
+      return res.status(404).json({
+        message: 'Birthday board user not found.',
+      });
+    }
+
+    const result = await db.query(
+      `INSERT INTO public.birthday_greetings (user_id, author_user_id, message)
+       VALUES ($1, $2, $3)
+       RETURNING id, message, created_at AS "createdAt"`,
+      [userId, req.actor.id, normalizedMessage]
+    );
+
+    return res.status(201).json({
+      message: 'Birthday greeting created successfully.',
+      greeting: {
+        ...result.rows[0],
+        authorId: req.actor.id,
+        authorName: req.actor.name || req.actor.email,
+      },
+    });
+  } catch (error) {
+    if (error.code === '42P01') {
+      return res.status(500).json({
+        message: 'The birthday_greetings table is missing from the database.',
+      });
+    }
+
+    return next(error);
+  }
+}
+
 async function upsertOAuthUser(req, res, next) {
   const { email, name } = req.body;
   const normalizedEmail = typeof email === 'string' ? String(email).trim().toLowerCase() : '';
@@ -750,6 +962,10 @@ async function upsertOAuthUser(req, res, next) {
 
     if (userColumns.has('phone')) {
       selectFields.push('phone');
+    }
+
+    if (userColumns.has('birth_date')) {
+      selectFields.push('birth_date');
     }
 
     if (userColumns.has('is_active')) {
@@ -783,6 +999,12 @@ async function upsertOAuthUser(req, res, next) {
       returningFields.push('phone');
     }
 
+    if (userColumns.has('birth_date')) {
+      insertColumns.push('birth_date');
+      insertValues.push(null);
+      returningFields.push('birth_date');
+    }
+
     if (userColumns.has('is_active')) {
       insertColumns.push('is_active');
       insertValues.push(true);
@@ -807,6 +1029,10 @@ async function upsertOAuthUser(req, res, next) {
 
         if (userColumns.has('phone')) {
           selectFields.push('phone');
+        }
+
+        if (userColumns.has('birth_date')) {
+          selectFields.push('birth_date');
         }
 
         if (userColumns.has('is_active')) {
@@ -843,8 +1069,10 @@ async function upsertOAuthUser(req, res, next) {
 
 module.exports = {
   authenticateCredentialsUser,
+  createBirthdayGreeting,
   createUser,
   getUserById,
+  listBirthdayGreetings,
   upsertOAuthUser,
   getUserDashboardAppointments,
   listUsers,
