@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   getShiftAssignmentPools,
   replaceShiftAssignments,
   type Shift,
   type ShiftAssignmentRequestType,
+  type ShiftAssignmentTypesByUserId,
   type ShiftRegistrationStatus,
+  type ReplaceShiftAssignmentsResponse,
 } from "@/lib/shifts";
 import type { BackendDirectoryUser } from "@/lib/server-users";
 
@@ -32,6 +34,7 @@ type AssignedUser = {
   name: string | null;
   status: ShiftRegistrationStatus;
   registrationId: string | null;
+  assignmentType: ShiftAssignmentRequestType;
 };
 
 function formatDateTime(value: string) {
@@ -87,7 +90,73 @@ function getAssignedUsersFromShift(shift: Shift): AssignedUser[] {
       name: registration.user.name,
       status: registration.status,
       registrationId: registration.id,
+      assignmentType: registration.status === "approved" ? "forced" : "standard",
     }));
+}
+
+function buildAssignmentSignature(users: AssignedUser[]) {
+  return [...users]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map(
+      (user) =>
+        `${user.id}:${user.status}:${user.registrationId ?? "new"}:${user.assignmentType}`,
+    )
+    .join("|");
+}
+
+function buildAssignmentTypesByUserId(
+  users: AssignedUser[],
+): ShiftAssignmentTypesByUserId {
+  return users.reduce<ShiftAssignmentTypesByUserId>((accumulator, user) => {
+    accumulator[user.id] = user.assignmentType;
+    return accumulator;
+  }, {});
+}
+
+function buildSuccessMessage(result: ReplaceShiftAssignmentsResponse) {
+  const summary = result.assignmentSummary;
+  const notifications = result.notificationSummary;
+  const messageParts: string[] = [];
+
+  if (summary) {
+    if (summary.forced > 0 && summary.standard > 0) {
+      messageParts.push(
+        `${summary.forced} משתמשים סומנו כמאולץ ויאושרו מיד, ו-${summary.standard} משתמשים סומנו כלא מאולץ ויקבלו בקשת אישור בוואטסאפ.`,
+      );
+    } else if (summary.forced > 0) {
+      messageParts.push(
+        `${summary.forced} משתמשים סומנו כמאולץ ואושרו מיד בלי בקשת אישור בוואטסאפ.`,
+      );
+    } else if (summary.standard > 0) {
+      messageParts.push(
+        `${summary.standard} משתמשים סומנו כלא מאולץ ויקבלו בקשת אישור בוואטסאפ.`,
+      );
+    }
+  }
+
+  if (notifications?.skippedNoPhone) {
+    messageParts.push(
+      `${notifications.skippedNoPhone} משתמשים לא קיבלו וואטסאפ כי אין להם מספר טלפון.`,
+    );
+  }
+
+  if (notifications?.skippedInvalidPhone) {
+    messageParts.push(
+      `${notifications.skippedInvalidPhone} משתמשים לא קיבלו וואטסאפ כי מספר הטלפון שלהם לא תקין.`,
+    );
+  }
+
+  if (notifications?.failed) {
+    messageParts.push(
+      `${notifications.failed} הודעות וואטסאפ נכשלו בשליחה.`,
+    );
+  }
+
+  if (messageParts.length === 0) {
+    return result.message || "השיבוץ נשמר בהצלחה.";
+  }
+
+  return `השיבוץ נשמר. ${messageParts.join(" ")}`;
 }
 
 export function ShiftAssignmentClient({
@@ -99,8 +168,8 @@ export function ShiftAssignmentClient({
     () => getAssignedUsersFromShift(shift),
     [shift],
   );
-  const [initialAssignedUserIds, setInitialAssignedUserIds] = useState<string[]>(
-    initialAssignedUsers.map((user) => user.id),
+  const [savedAssignmentSignature, setSavedAssignmentSignature] = useState(
+    buildAssignmentSignature(initialAssignedUsers),
   );
   const [poolDefaultUsers, setPoolDefaultUsers] = useState<BackendDirectoryUser[]>(defaultUsers);
   const [poolAlreadyAssignedUsers, setPoolAlreadyAssignedUsers] =
@@ -112,36 +181,15 @@ export function ShiftAssignmentClient({
     message: string;
   } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [assignmentType, setAssignmentType] =
-    useState<ShiftAssignmentRequestType>("standard");
-
-  useEffect(() => {
-    setAssignedUsers((current) =>
-      current.map((user) =>
-        user.registrationId
-          ? user
-          : {
-              ...user,
-              status: assignmentType === "forced" ? "approved" : "pending",
-            },
-      ),
-    );
-  }, [assignmentType]);
 
   const assignedUserIds = useMemo(
     () => new Set(assignedUsers.map((user) => user.id)),
     [assignedUsers],
   );
-  const hasChanges = useMemo(() => {
-    if (assignedUsers.length !== initialAssignedUserIds.length) {
-      return true;
-    }
-
-    const currentIds = assignedUsers.map((user) => user.id).sort();
-    const initialIds = [...initialAssignedUserIds].sort();
-
-    return currentIds.some((userId, index) => userId !== initialIds[index]);
-  }, [assignedUsers, initialAssignedUserIds]);
+  const hasChanges = useMemo(
+    () => buildAssignmentSignature(assignedUsers) !== savedAssignmentSignature,
+    [assignedUsers, savedAssignmentSignature],
+  );
   const allPoolUsers = useMemo(() => {
     const usersById = new Map<string, BackendDirectoryUser>();
 
@@ -209,11 +257,23 @@ export function ShiftAssignmentClient({
       id: nextUser.id,
       email: nextUser.email,
       name: nextUser.name,
-      status: assignmentType === "forced" ? "approved" : "pending",
+      status: "pending",
       registrationId: null,
+      assignmentType: "standard",
     };
 
     setAssignedUsers((current) => [...current, nextAssignedUser]);
+    setFeedback(null);
+  }
+
+  function updateAssignedUserType(userId: string, assignmentType: ShiftAssignmentRequestType) {
+    setAssignedUsers((current) =>
+      current.map((user) =>
+        user.id !== userId || user.status === "approved"
+          ? user
+          : { ...user, assignmentType }
+      ),
+    );
     setFeedback(null);
   }
 
@@ -224,7 +284,7 @@ export function ShiftAssignmentClient({
       setFeedback({
         variant: "error",
         message:
-          "משתמש שאישר את התורנות נעול לשינוי במסך הזה ולא ניתן להסיר אותו ישירות.",
+          "משתמש שכבר מאושר לתורנות נעול לשינוי במסך הזה ולא ניתן להסיר אותו ישירות.",
       });
       return;
     }
@@ -241,21 +301,18 @@ export function ShiftAssignmentClient({
       const result = await replaceShiftAssignments(
         shift.id,
         assignedUsers.map((user) => user.id),
-        assignmentType,
+        buildAssignmentTypesByUserId(assignedUsers),
       );
       const nextAssignedUsers = getAssignedUsersFromShift(result.shift);
       const pools = await getShiftAssignmentPools(shift.id);
 
       setAssignedUsers(nextAssignedUsers);
-      setInitialAssignedUserIds(nextAssignedUsers.map((user) => user.id));
+      setSavedAssignmentSignature(buildAssignmentSignature(nextAssignedUsers));
       setPoolDefaultUsers(pools.defaultUsers);
       setPoolAlreadyAssignedUsers(pools.alreadyAssignedUsers);
       setFeedback({
         variant: "success",
-        message:
-          result.appliedAssignmentType === "forced"
-            ? "השיבוץ נשמר כשיבוץ מאולץ. המשתמשים שאויכו אושרו מיידית ולא נשלחה בקשת אישור בוואטסאפ."
-            : "השיבוץ נשמר. המשתמשים שאויכו קיבלו בקשת אישור בוואטסאפ והשיבוץ שלהם ממתין לאישור.",
+        message: buildSuccessMessage(result),
       });
     } catch (error) {
       setFeedback({
@@ -307,8 +364,8 @@ export function ShiftAssignmentClient({
             </h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
               במאגר הראשי יופיעו קודם משתמשים שעדיין לא שובצו החודש ל
-              {formatShiftTypeLabel(shift.shiftType)}. מתחתיו תופיע רשימה נוספת של מי שכבר
-              שובצו החודש, כאופציה נוספת לשיוך.
+              {formatShiftTypeLabel(shift.shiftType)}. אחרי שתשייך משתמש, תוכל לבחור עבורו
+              בנפרד אם השיבוץ יהיה מאולץ או לא מאולץ.
             </p>
           </div>
         </section>
@@ -361,61 +418,18 @@ export function ShiftAssignmentClient({
 
           <div className="mt-6">
             {hasChanges ? (
-              <div className="mb-4 space-y-4 rounded-[1.75rem] border border-stone-200 bg-stone-50 p-4">
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-stone-900">סוג שיבוץ</p>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="flex cursor-pointer items-start gap-3 rounded-3xl border border-stone-200 bg-white p-4 text-right">
-                      <input
-                        type="radio"
-                        name="assignment-type"
-                        value="standard"
-                        checked={assignmentType === "standard"}
-                        onChange={() => setAssignmentType("standard")}
-                        className="mt-1 h-4 w-4 accent-stone-900"
-                      />
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-stone-900">לא מאולץ</p>
-                        <p className="text-sm leading-6 text-stone-600">
-                          ישלח למשתמשים אישור בוואטסאפ והשיבוץ יישמר כממתין לאישור.
-                        </p>
-                      </div>
-                    </label>
-
-                    <label className="flex cursor-pointer items-start gap-3 rounded-3xl border border-stone-200 bg-white p-4 text-right">
-                      <input
-                        type="radio"
-                        name="assignment-type"
-                        value="forced"
-                        checked={assignmentType === "forced"}
-                        onChange={() => setAssignmentType("forced")}
-                        className="mt-1 h-4 w-4 accent-stone-900"
-                      />
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-stone-900">מאולץ</p>
-                        <p className="text-sm leading-6 text-stone-600">
-                          לא תישלח הודעת אישור בוואטסאפ והשיבוץ יאושר מיידית.
-                        </p>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => void handleSaveAssignments()}
-                    disabled={isSaving}
-                    className="rounded-2xl bg-stone-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-400"
-                  >
-                    שמירה ועדכון המשתמשים
-                  </button>
-                  <span className="text-sm text-stone-600">
-                    {assignmentType === "forced"
-                      ? "השינויים יישמרו כשיבוץ מאולץ ויאושרו מיד."
-                      : "השינויים יישמרו כשיבוץ רגיל ויישלחו לאישור בוואטסאפ."}
-                  </span>
-                </div>
+              <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[1.75rem] border border-stone-200 bg-stone-50 p-4">
+                <button
+                  type="button"
+                  onClick={() => void handleSaveAssignments()}
+                  disabled={isSaving}
+                  className="rounded-2xl bg-stone-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-400"
+                >
+                  שמירה ועדכון המשתמשים
+                </button>
+                <span className="text-sm text-stone-600">
+                  לכל משתמש אפשר לבחור עכשיו בנפרד אם השיבוץ יהיה מאולץ או לא מאולץ.
+                </span>
               </div>
             ) : null}
 
@@ -437,58 +451,125 @@ export function ShiftAssignmentClient({
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
-                {assignedUsers.map((user) => (
-                  <article
-                    key={user.id}
-                    draggable={user.status !== "approved"}
-                    onDragStart={(event) => {
-                      if (user.status === "approved") {
-                        event.preventDefault();
-                        setFeedback({
-                          variant: "error",
-                          message:
-                            "משתמש שאישר את התורנות נעול לשינוי במסך הזה ולא ניתן להסיר אותו ישירות.",
-                        });
-                        return;
-                      }
+                {assignedUsers.map((user) => {
+                  const isApproved = user.status === "approved";
 
-                      handleDragStart(event, { source: "assigned", userId: user.id });
-                    }}
-                    className={`rounded-3xl border border-stone-200 p-5 ${
-                      user.status === "approved"
-                        ? "cursor-not-allowed bg-emerald-50"
-                        : "cursor-grab bg-stone-50 active:cursor-grabbing"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-lg font-semibold text-stone-900">
-                          {user.name ?? "ללא שם"}
-                        </p>
-                        <p className="text-sm text-stone-600">{user.email}</p>
-                        <p className="text-xs text-stone-500">ID: {user.id}</p>
-                      </div>
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          user.status === "approved"
-                            ? "bg-emerald-100 text-emerald-900"
-                            : "bg-amber-100 text-amber-900"
-                        }`}
-                      >
-                        {formatRegistrationStatus(user.status)}
-                      </span>
-                    </div>
+                  return (
+                    <article
+                      key={user.id}
+                      draggable={!isApproved}
+                      onDragStart={(event) => {
+                        if (isApproved) {
+                          event.preventDefault();
+                          setFeedback({
+                            variant: "error",
+                            message:
+                              "משתמש שכבר מאושר לתורנות נעול לשינוי במסך הזה ולא ניתן להסיר אותו ישירות.",
+                          });
+                          return;
+                        }
 
-                    <button
-                      type="button"
-                      onClick={() => unassignUser(user.id)}
-                      disabled={user.status === "approved"}
-                      className="mt-4 rounded-2xl border border-stone-300 px-4 py-2 text-sm font-medium text-stone-900 transition hover:border-stone-900 disabled:cursor-not-allowed disabled:border-stone-200 disabled:text-stone-400"
+                        handleDragStart(event, { source: "assigned", userId: user.id });
+                      }}
+                      className={`rounded-3xl border border-stone-200 p-5 ${
+                        isApproved
+                          ? "cursor-not-allowed bg-emerald-50"
+                          : "cursor-grab bg-stone-50 active:cursor-grabbing"
+                      }`}
                     >
-                      החזר לרשימה
-                    </button>
-                  </article>
-                ))}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-lg font-semibold text-stone-900">
+                            {user.name ?? "ללא שם"}
+                          </p>
+                          <p className="text-sm text-stone-600">{user.email}</p>
+                          <p className="text-xs text-stone-500">ID: {user.id}</p>
+                        </div>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            isApproved
+                              ? "bg-emerald-100 text-emerald-900"
+                              : "bg-amber-100 text-amber-900"
+                          }`}
+                        >
+                          {formatRegistrationStatus(user.status)}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 rounded-3xl border border-stone-200 bg-white p-4">
+                        <p className="text-xs font-semibold tracking-[0.18em] text-stone-500">
+                          סוג שיבוץ למשתמש הזה
+                        </p>
+
+                        {isApproved ? (
+                          <div className="mt-3 space-y-2 text-sm text-stone-700">
+                            <p className="font-medium text-stone-900">מאולץ / מאושר כבר בפועל</p>
+                            <p>המשתמש כבר מאושר לתורנות ולכן לא ניתן לשנות עבורו את סוג השיבוץ כאן.</p>
+                          </div>
+                        ) : (
+                          <div className="mt-3 space-y-3">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 p-3">
+                                <input
+                                  type="radio"
+                                  name={`assignment-type-${user.id}`}
+                                  value="standard"
+                                  checked={user.assignmentType === "standard"}
+                                  onChange={() => updateAssignedUserType(user.id, "standard")}
+                                  className="mt-1 h-4 w-4 accent-stone-900"
+                                />
+                                <div>
+                                  <p className="text-sm font-semibold text-stone-900">לא מאולץ</p>
+                                  <p className="text-sm text-stone-600">
+                                    תישלח בקשת אישור בוואטסאפ והשיבוץ ימתין לאישור.
+                                  </p>
+                                </div>
+                              </label>
+
+                              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 p-3">
+                                <input
+                                  type="radio"
+                                  name={`assignment-type-${user.id}`}
+                                  value="forced"
+                                  checked={user.assignmentType === "forced"}
+                                  onChange={() => updateAssignedUserType(user.id, "forced")}
+                                  className="mt-1 h-4 w-4 accent-stone-900"
+                                />
+                                <div>
+                                  <p className="text-sm font-semibold text-stone-900">מאולץ</p>
+                                  <p className="text-sm text-stone-600">
+                                    לא תישלח בקשת אישור בוואטסאפ והשיבוץ יאושר מיד בשמירה.
+                                  </p>
+                                </div>
+                              </label>
+                            </div>
+
+                            <p
+                              className={`text-sm ${
+                                user.assignmentType === "forced"
+                                  ? "text-emerald-700"
+                                  : "text-stone-600"
+                              }`}
+                            >
+                              {user.assignmentType === "forced"
+                                ? "בבחירה הנוכחית המשתמש יאושר מיד עם השמירה."
+                                : "בבחירה הנוכחית המשתמש יקבל בקשת אישור בוואטסאפ."}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => unassignUser(user.id)}
+                        disabled={isApproved}
+                        className="mt-4 rounded-2xl border border-stone-300 px-4 py-2 text-sm font-medium text-stone-900 transition hover:border-stone-900 disabled:cursor-not-allowed disabled:border-stone-200 disabled:text-stone-400"
+                      >
+                        החזר לרשימה
+                      </button>
+                    </article>
+                  );
+                })}
               </div>
             )}
           </div>

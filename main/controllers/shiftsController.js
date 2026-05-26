@@ -486,9 +486,22 @@ async function sendShiftAssignmentNotifications(shift, users) {
   return summary;
 }
 
-function buildShiftAssignmentResponseMessage(notificationSummary, assignmentType = 'standard') {
+function buildShiftAssignmentResponseMessage(
+  notificationSummary,
+  assignmentType = 'standard',
+  assignmentSummary = null
+) {
   if (assignmentType === 'forced') {
     return 'Shift assignments updated successfully. Forced assignments were approved immediately without sending WhatsApp approval requests.';
+  }
+
+  if (
+    assignmentType === 'mixed' &&
+    assignmentSummary &&
+    assignmentSummary.forced > 0 &&
+    assignmentSummary.standard > 0
+  ) {
+    return 'Shift assignments updated successfully. Forced assignments were approved immediately, while standard assignments continued through WhatsApp approval requests.';
   }
 
   if (!notificationSummary) {
@@ -1683,8 +1696,12 @@ async function registerForShift(req, res, next) {
 
 async function replaceShiftAssignments(req, res, next) {
   const { id } = req.params;
-  const { userIds, assignmentType: rawAssignmentType } = req.body || {};
-  const assignmentType =
+  const {
+    userIds,
+    assignmentType: rawAssignmentType,
+    assignmentTypesByUserId: rawAssignmentTypesByUserId,
+  } = req.body || {};
+  const defaultAssignmentType =
     rawAssignmentType === 'forced' ? 'forced' : rawAssignmentType === 'standard' || rawAssignmentType == null
       ? 'standard'
       : null;
@@ -1701,9 +1718,21 @@ async function replaceShiftAssignments(req, res, next) {
     });
   }
 
-  if (!assignmentType) {
+  if (!defaultAssignmentType) {
     return res.status(400).json({
       message: "assignmentType must be either 'standard' or 'forced'.",
+    });
+  }
+
+  if (
+    rawAssignmentTypesByUserId != null &&
+    (
+      typeof rawAssignmentTypesByUserId !== 'object' ||
+      Array.isArray(rawAssignmentTypesByUserId)
+    )
+  ) {
+    return res.status(400).json({
+      message: 'assignmentTypesByUserId must be an object keyed by user id.',
     });
   }
 
@@ -1714,11 +1743,29 @@ async function replaceShiftAssignments(req, res, next) {
   }
 
   const normalizedUserIds = Array.from(new Set(userIds.map((value) => String(value))));
+  const requestedUserIdsSet = new Set(normalizedUserIds);
+  const normalizedAssignmentTypesByUserId = new Map();
 
   if (!normalizedUserIds.every((userId) => isValidUuid(userId))) {
     return res.status(400).json({
       message: 'All userIds must be valid UUIDs.',
     });
+  }
+
+  const assignmentTypeEntries = Object.entries(rawAssignmentTypesByUserId || {});
+
+  for (const [userId, value] of assignmentTypeEntries) {
+    if (!requestedUserIdsSet.has(userId)) {
+      continue;
+    }
+
+    if (value !== 'standard' && value !== 'forced') {
+      return res.status(400).json({
+        message: "assignmentTypesByUserId values must be either 'standard' or 'forced'.",
+      });
+    }
+
+    normalizedAssignmentTypesByUserId.set(userId, value);
   }
 
   const client = await db.pool.connect();
@@ -1816,14 +1863,39 @@ async function replaceShiftAssignments(req, res, next) {
       targetUsersResult.rows.map((user) => [user.id, user])
     );
     const usersToNotifyById = new Map();
-    const nextSelectedStatus = assignmentType === 'forced' ? 'approved' : 'pending';
     const forcedReviewNote = 'Force assigned by staff.';
+    const assignmentSummary = {
+      standard: 0,
+      forced: 0,
+      preservedApproved: 0,
+    };
+
+    for (const userId of normalizedUserIds) {
+      const existingRegistration = existingRegistrationsByUserId.get(userId);
+
+      if (existingRegistration && existingRegistration.status === 'approved') {
+        continue;
+      }
+
+      const selectedAssignmentType =
+        normalizedAssignmentTypesByUserId.get(userId) || defaultAssignmentType;
+
+      if (selectedAssignmentType === 'forced') {
+        assignmentSummary.forced += 1;
+      } else {
+        assignmentSummary.standard += 1;
+      }
+    }
 
     for (const userId of effectiveSelectedUserIds) {
       const registration = existingRegistrationsByUserId.get(userId);
+      const selectedAssignmentType =
+        normalizedAssignmentTypesByUserId.get(userId) || defaultAssignmentType;
+      const nextSelectedStatus =
+        selectedAssignmentType === 'forced' ? 'approved' : 'pending';
 
       if (!registration) {
-        if (assignmentType === 'forced') {
+        if (selectedAssignmentType === 'forced') {
           await client.query(
             `INSERT INTO public.shift_registrations (
                id,
@@ -1855,7 +1927,7 @@ async function replaceShiftAssignments(req, res, next) {
 
         const targetUser = targetUsersById.get(userId);
 
-        if (targetUser && assignmentType === 'standard') {
+        if (targetUser && selectedAssignmentType === 'standard') {
           usersToNotifyById.set(userId, targetUser);
         }
 
@@ -1863,11 +1935,14 @@ async function replaceShiftAssignments(req, res, next) {
       }
 
       if (registration.status === 'approved') {
+        if (!requestedUserIdsSet.has(userId)) {
+          assignmentSummary.preservedApproved += 1;
+        }
         continue;
       }
 
       if (registration.status === 'pending') {
-        if (assignmentType === 'standard') {
+        if (selectedAssignmentType === 'standard') {
           continue;
         }
 
@@ -1886,18 +1961,18 @@ async function replaceShiftAssignments(req, res, next) {
       await client.query(
         `UPDATE public.shift_registrations
          SET status = $2,
-             reviewed_at = ${assignmentType === 'forced' ? 'NOW()' : 'NULL'},
-             reviewed_by_user_id = ${assignmentType === 'forced' ? '$3' : 'NULL'},
-             review_note = ${assignmentType === 'forced' ? '$4' : 'NULL'}
+             reviewed_at = ${selectedAssignmentType === 'forced' ? 'NOW()' : 'NULL'},
+             reviewed_by_user_id = ${selectedAssignmentType === 'forced' ? '$3' : 'NULL'},
+             review_note = ${selectedAssignmentType === 'forced' ? '$4' : 'NULL'}
          WHERE id = $1`,
-        assignmentType === 'forced'
+        selectedAssignmentType === 'forced'
           ? [registration.id, nextSelectedStatus, req.actor.id, forcedReviewNote]
           : [registration.id, nextSelectedStatus]
       );
 
       const targetUser = targetUsersById.get(userId);
 
-      if (targetUser && assignmentType === 'standard') {
+      if (targetUser && selectedAssignmentType === 'standard') {
         usersToNotifyById.set(userId, targetUser);
       }
     }
@@ -1944,8 +2019,14 @@ async function replaceShiftAssignments(req, res, next) {
       available_slots: Math.max(Number(updatedShiftResult.rows[0].capacity) - reservedSlots, 0),
     });
     formattedShift.registrations = await loadShiftRegistrations(id);
+    const appliedAssignmentType =
+      assignmentSummary.forced > 0 && assignmentSummary.standard > 0
+        ? 'mixed'
+        : assignmentSummary.forced > 0
+          ? 'forced'
+          : 'standard';
     const notificationSummary =
-      assignmentType === 'standard'
+      assignmentSummary.standard > 0
         ? await sendShiftAssignmentNotifications(
             updatedShiftResult.rows[0],
             Array.from(usersToNotifyById.values())
@@ -1953,8 +2034,13 @@ async function replaceShiftAssignments(req, res, next) {
         : undefined;
 
     return res.json({
-      message: buildShiftAssignmentResponseMessage(notificationSummary, assignmentType),
-      appliedAssignmentType: assignmentType,
+      message: buildShiftAssignmentResponseMessage(
+        notificationSummary,
+        appliedAssignmentType,
+        assignmentSummary
+      ),
+      appliedAssignmentType,
+      assignmentSummary,
       notificationSummary,
       shift: formattedShift,
     });

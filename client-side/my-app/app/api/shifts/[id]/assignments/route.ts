@@ -5,7 +5,10 @@ import {
   BackendShiftsError,
   replaceShiftAssignmentsForUser,
 } from "@/lib/server-shifts";
-import type { ShiftAssignmentRequestType } from "@/lib/shifts";
+import type {
+  ShiftAssignmentRequestType,
+  ShiftAssignmentTypesByUserId,
+} from "@/lib/shifts";
 
 type RouteContext = {
   params: Promise<{
@@ -26,10 +29,17 @@ export async function PUT(request: Request, context: RouteContext) {
     const { id } = await context.params;
     const assignmentType: ShiftAssignmentRequestType =
       body?.assignmentType === "forced" ? "forced" : "standard";
+    const assignmentTypesByUserId: ShiftAssignmentTypesByUserId =
+      body?.assignmentTypesByUserId &&
+      typeof body.assignmentTypesByUserId === "object" &&
+      !Array.isArray(body.assignmentTypesByUserId)
+        ? body.assignmentTypesByUserId
+        : {};
     const result = await replaceShiftAssignmentsForUser(
       userId,
       id,
       Array.isArray(body?.userIds) ? body.userIds : [],
+      assignmentTypesByUserId,
       assignmentType,
     );
     return NextResponse.json(result);

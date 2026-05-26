@@ -1,5 +1,6 @@
 import {
   CreateShiftPayload,
+  ShiftAssignmentTypesByUserId,
   MyRegisteredShiftsResponse,
   ReplaceShiftAssignmentsResponse,
   Shift,
@@ -146,6 +147,7 @@ export async function replaceShiftAssignmentsForUser(
   userId: string,
   shiftId: string,
   userIds: string[],
+  assignmentTypesByUserId: ShiftAssignmentTypesByUserId = {},
   assignmentType: ShiftAssignmentRequestType = "standard",
 ) {
   return backendShiftsFetch<ReplaceShiftAssignmentsResponse>(
@@ -153,7 +155,7 @@ export async function replaceShiftAssignmentsForUser(
     `/shifts/${shiftId}/assignments`,
     {
       method: "PUT",
-      body: JSON.stringify({ userIds, assignmentType }),
+      body: JSON.stringify({ userIds, assignmentType, assignmentTypesByUserId }),
     },
   );
 }
