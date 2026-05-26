@@ -8,6 +8,16 @@ export type ShiftRegistrationStatus =
   | "rejected"
   | "cancelled";
 
+export type ShiftAssignmentPoolUser = {
+  id: string;
+  email: string;
+  name: string | null;
+  role: UserRole;
+  phone?: string | null;
+  birthDate?: string | null;
+  isActive?: boolean;
+};
+
 export type ShiftActor = {
   id: string;
   name: string | null;
@@ -77,6 +87,14 @@ export type ReplaceShiftAssignmentsResponse = {
   message: string;
   shift: Shift;
   notificationSummary?: ShiftAssignmentNotificationSummary;
+};
+
+export type ShiftAssignmentPoolsResponse = {
+  shiftType: ShiftType | null;
+  monthStart: string | null;
+  monthEnd: string | null;
+  defaultUsers: ShiftAssignmentPoolUser[];
+  alreadyAssignedUsers: ShiftAssignmentPoolUser[];
 };
 
 export type CreateShiftPayload = {
@@ -160,6 +178,12 @@ export async function replaceShiftAssignments(shiftId: string, userIds: string[]
       method: "PUT",
       body: JSON.stringify({ userIds }),
     },
+  );
+}
+
+export async function getShiftAssignmentPools(shiftId: string) {
+  return internalApiFetch<ShiftAssignmentPoolsResponse>(
+    `/api/shifts/${shiftId}/assignment-pools`,
   );
 }
 

@@ -3,12 +3,12 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/auth";
 import { ShiftAssignmentClient } from "@/components/shift-assignment-client";
-import { BackendShiftsError, fetchShiftByIdForUser } from "@/lib/server-shifts";
 import {
-  BackendUsersError,
-  fetchAllBackendUsers,
-  type BackendDirectoryUser,
-} from "@/lib/server-users";
+  BackendShiftsError,
+  fetchShiftAssignmentPoolsForUser,
+  fetchShiftByIdForUser,
+} from "@/lib/server-shifts";
+import type { BackendDirectoryUser } from "@/lib/server-users";
 import type { Shift } from "@/lib/shifts";
 
 type PageProps = {
@@ -30,19 +30,21 @@ export default async function ManageShiftAssignmentPage({ params }: PageProps) {
 
   const { id } = await params;
   let shift: Shift | null = null;
-  let users: BackendDirectoryUser[] = [];
+  let defaultUsers: BackendDirectoryUser[] = [];
+  let alreadyAssignedUsers: BackendDirectoryUser[] = [];
   let errorMessage = "";
 
   try {
-    const [shiftResponse, usersResponse] = await Promise.all([
+    const [shiftResponse, poolsResponse] = await Promise.all([
       fetchShiftByIdForUser(session.user.id, id),
-      fetchAllBackendUsers(),
+      fetchShiftAssignmentPoolsForUser(session.user.id, id),
     ]);
 
     shift = shiftResponse.shift;
-    users = usersResponse.filter((user) => user.role === "user");
+    defaultUsers = poolsResponse.defaultUsers;
+    alreadyAssignedUsers = poolsResponse.alreadyAssignedUsers;
   } catch (error) {
-    if (error instanceof BackendShiftsError || error instanceof BackendUsersError) {
+    if (error instanceof BackendShiftsError) {
       errorMessage = error.message;
     } else if (error instanceof Error) {
       errorMessage = error.message;
@@ -79,7 +81,11 @@ export default async function ManageShiftAssignmentPage({ params }: PageProps) {
             </p>
           </section>
         ) : (
-          <ShiftAssignmentClient shift={shift} users={users} />
+          <ShiftAssignmentClient
+            shift={shift}
+            defaultUsers={defaultUsers}
+            alreadyAssignedUsers={alreadyAssignedUsers}
+          />
         )}
       </div>
     </main>

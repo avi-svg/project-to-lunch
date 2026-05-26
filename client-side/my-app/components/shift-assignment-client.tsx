@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  getShiftAssignmentPools,
   replaceShiftAssignments,
   type Shift,
   type ShiftRegistrationStatus,
@@ -10,7 +11,8 @@ import type { BackendDirectoryUser } from "@/lib/server-users";
 
 type Props = {
   shift: Shift;
-  users: BackendDirectoryUser[];
+  defaultUsers: BackendDirectoryUser[];
+  alreadyAssignedUsers: BackendDirectoryUser[];
 };
 
 type DragPayload =
@@ -57,6 +59,18 @@ function formatRegistrationStatus(status: ShiftRegistrationStatus) {
   return "בוטל";
 }
 
+function formatShiftTypeLabel(shiftType: Shift["shiftType"]) {
+  if (shiftType === "dinner") {
+    return "ארוחת ערב";
+  }
+
+  if (shiftType === "cleaning") {
+    return "ניקיון";
+  }
+
+  return "התורנות הזאת";
+}
+
 function getAssignedUsersFromShift(shift: Shift): AssignedUser[] {
   const registrations = shift.registrations ?? [];
 
@@ -75,7 +89,11 @@ function getAssignedUsersFromShift(shift: Shift): AssignedUser[] {
     }));
 }
 
-export function ShiftAssignmentClient({ shift, users }: Props) {
+export function ShiftAssignmentClient({
+  shift,
+  defaultUsers,
+  alreadyAssignedUsers,
+}: Props) {
   const initialAssignedUsers = useMemo<AssignedUser[]>(
     () => getAssignedUsersFromShift(shift),
     [shift],
@@ -83,6 +101,9 @@ export function ShiftAssignmentClient({ shift, users }: Props) {
   const [initialAssignedUserIds, setInitialAssignedUserIds] = useState<string[]>(
     initialAssignedUsers.map((user) => user.id),
   );
+  const [poolDefaultUsers, setPoolDefaultUsers] = useState<BackendDirectoryUser[]>(defaultUsers);
+  const [poolAlreadyAssignedUsers, setPoolAlreadyAssignedUsers] =
+    useState<BackendDirectoryUser[]>(alreadyAssignedUsers);
   const [assignedUsers, setAssignedUsers] = useState<AssignedUser[]>(initialAssignedUsers);
   const [activeDropZone, setActiveDropZone] = useState<"pool" | "assigned" | null>(null);
   const [feedback, setFeedback] = useState<{
@@ -105,9 +126,29 @@ export function ShiftAssignmentClient({ shift, users }: Props) {
 
     return currentIds.some((userId, index) => userId !== initialIds[index]);
   }, [assignedUsers, initialAssignedUserIds]);
-  const availableUsers = useMemo(
-    () => users.filter((user) => !assignedUserIds.has(user.id)),
-    [assignedUserIds, users],
+  const allPoolUsers = useMemo(() => {
+    const usersById = new Map<string, BackendDirectoryUser>();
+
+    for (const user of [...poolDefaultUsers, ...poolAlreadyAssignedUsers]) {
+      usersById.set(user.id, user);
+    }
+
+    return Array.from(usersById.values());
+  }, [poolAlreadyAssignedUsers, poolDefaultUsers]);
+  const defaultUserIds = useMemo(
+    () => new Set(poolDefaultUsers.map((user) => user.id)),
+    [poolDefaultUsers],
+  );
+  const availableDefaultUsers = useMemo(
+    () => poolDefaultUsers.filter((user) => !assignedUserIds.has(user.id)),
+    [assignedUserIds, poolDefaultUsers],
+  );
+  const availableAlreadyAssignedUsers = useMemo(
+    () =>
+      poolAlreadyAssignedUsers.filter(
+        (user) => !assignedUserIds.has(user.id) && !defaultUserIds.has(user.id),
+      ),
+    [assignedUserIds, defaultUserIds, poolAlreadyAssignedUsers],
   );
   const availableSlots = Math.max(shift.capacity - assignedUsers.length, 0);
 
@@ -142,7 +183,7 @@ export function ShiftAssignmentClient({ shift, users }: Props) {
       return;
     }
 
-    const nextUser = users.find((user) => user.id === userId);
+    const nextUser = allPoolUsers.find((user) => user.id === userId);
 
     if (!nextUser) {
       return;
@@ -186,8 +227,12 @@ export function ShiftAssignmentClient({ shift, users }: Props) {
         assignedUsers.map((user) => user.id),
       );
       const nextAssignedUsers = getAssignedUsersFromShift(result.shift);
+      const pools = await getShiftAssignmentPools(shift.id);
+
       setAssignedUsers(nextAssignedUsers);
       setInitialAssignedUserIds(nextAssignedUsers.map((user) => user.id));
+      setPoolDefaultUsers(pools.defaultUsers);
+      setPoolAlreadyAssignedUsers(pools.alreadyAssignedUsers);
       setFeedback({
         variant: "success",
         message:
@@ -242,8 +287,9 @@ export function ShiftAssignmentClient({ shift, users }: Props) {
               גרור משתמשים אל תוך התורנות
             </h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
-              בצד ימין נמצאת רשימת כל המשתמשים שאינם אנשי צוות. אפשר לגרור כל משתמש
-              אל תוך הפעילות כדי להכין את השיבוץ.
+              במאגר הראשי יופיעו קודם משתמשים שעדיין לא שובצו החודש ל
+              {formatShiftTypeLabel(shift.shiftType)}. מתחתיו תופיע רשימה נוספת של מי שכבר
+              שובצו החודש, כאופציה נוספת לשיוך.
             </p>
           </div>
         </section>
@@ -325,7 +371,7 @@ export function ShiftAssignmentClient({ shift, users }: Props) {
 
             {assignedUsers.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-stone-300 bg-stone-50 px-6 py-10 text-center text-sm text-stone-600">
-                גרור לכאן משתמשים מהרשימה הימנית כדי לשייך אותם לתורנות.
+                גרור לכאן משתמשים מאחד המאגרים כדי לשייך אותם לתורנות.
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
@@ -403,24 +449,24 @@ export function ShiftAssignmentClient({ shift, users }: Props) {
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
-                משתמשים זמינים
+                מאגר משתמשים
               </p>
               <h2 className="mt-2 text-2xl font-semibold text-stone-900">
-                כל מי שאינו איש צוות
+                עדיין לא שובצו החודש
               </h2>
             </div>
             <span className="rounded-full bg-stone-100 px-4 py-2 text-sm text-stone-700">
-              {availableUsers.length}
+              {availableDefaultUsers.length}
             </span>
           </div>
 
           <div className="mt-6 space-y-3">
-            {availableUsers.length === 0 ? (
+            {availableDefaultUsers.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-600">
-                אין כרגע משתמשים זמינים ברשימה, או שכל המקומות כבר הוכנו לשיבוץ.
+                אין כרגע משתמשים פנויים במאגר הראשי לתורנות הזו.
               </div>
             ) : (
-              availableUsers.map((user) => (
+              availableDefaultUsers.map((user) => (
                 <article
                   key={user.id}
                   draggable
@@ -433,7 +479,64 @@ export function ShiftAssignmentClient({ shift, users }: Props) {
                     {user.name ?? "ללא שם"}
                   </p>
                   <p className="mt-1 text-sm text-stone-600">{user.email}</p>
-                  <p className="mt-1 text-xs text-stone-500">גרור אל הפעילות</p>
+                  <p className="mt-1 text-xs text-stone-500">גרור אל התורנות</p>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            setActiveDropZone("pool");
+          }}
+          onDragLeave={() => setActiveDropZone((current) => (current === "pool" ? null : current))}
+          onDrop={handleDropOnPool}
+          className={`rounded-[2rem] border border-amber-200 bg-amber-50/40 p-6 shadow-sm transition ${
+            activeDropZone === "pool" ? "border-amber-400 bg-amber-50" : ""
+          }`}
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold tracking-[0.2em] text-amber-700">
+                מאגר נוסף
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold text-stone-900">
+                כבר שובצו החודש
+              </h2>
+              <p className="mt-2 text-sm text-stone-600">
+                מוצגים כאן רק כאופציה נוספת לשיוך.
+              </p>
+            </div>
+            <span className="rounded-full bg-white px-4 py-2 text-sm text-stone-700">
+              {availableAlreadyAssignedUsers.length}
+            </span>
+          </div>
+
+          <div className="mt-6 space-y-3">
+            {availableAlreadyAssignedUsers.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-amber-300 bg-white px-4 py-6 text-sm text-stone-600">
+                אין כרגע משתמשים שכבר שובצו החודש וממתינים כאן כאופציה נוספת.
+              </div>
+            ) : (
+              availableAlreadyAssignedUsers.map((user) => (
+                <article
+                  key={user.id}
+                  draggable
+                  onDragStart={(event) =>
+                    handleDragStart(event, { source: "pool", userId: user.id })
+                  }
+                  className="cursor-grab rounded-3xl border border-amber-200 bg-white p-4 active:cursor-grabbing"
+                >
+                  <p className="text-base font-semibold text-stone-900">
+                    {user.name ?? "ללא שם"}
+                  </p>
+                  <p className="mt-1 text-sm text-stone-600">{user.email}</p>
+                  <p className="mt-1 text-xs text-amber-800">
+                    כבר שובץ החודש ל{formatShiftTypeLabel(shift.shiftType)}
+                  </p>
                 </article>
               ))
             )}

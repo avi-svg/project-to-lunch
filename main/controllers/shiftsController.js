@@ -228,6 +228,24 @@ function endOfWeekUtc(weekStart) {
   );
 }
 
+function startOfMonthUtc(value) {
+  const dateParts = parseDisplayDateInput(value);
+
+  if (!dateParts) {
+    return null;
+  }
+
+  return createUtcDateForDisplayMidnight(dateParts.year, dateParts.month, 1);
+}
+
+function endOfMonthUtc(monthStart) {
+  const { year, month } = getDatePartsInDisplayTimeZone(monthStart);
+  const nextMonthYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+
+  return createUtcDateForDisplayMidnight(nextMonthYear, nextMonth, 1);
+}
+
 function formatShiftRow(row) {
   return {
     id: row.id,
@@ -603,6 +621,116 @@ async function getShiftById(req, res, next) {
     }
 
     return res.json({ shift });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function listShiftAssignmentPools(req, res, next) {
+  const { id } = req.params;
+
+  if (!isValidUuid(id)) {
+    return res.status(400).json({
+      message: 'Shift id must be a valid UUID.',
+    });
+  }
+
+  if (!isStaffLike(req.actor.role)) {
+    return res.status(403).json({
+      message: 'Only staff users can manage shift assignment pools.',
+    });
+  }
+
+  try {
+    const shiftResult = await loadShiftById(id);
+
+    if (shiftResult.rows.length === 0) {
+      return res.status(404).json({
+        message: 'Shift not found.',
+      });
+    }
+
+    const shift = shiftResult.rows[0];
+
+    if (!canManageShift(req.actor, shift)) {
+      return res.status(403).json({
+        message: 'You do not have permission to view assignment pools for this shift.',
+      });
+    }
+
+    const resolvedShiftType = inferShiftType(shift);
+    const monthStart = startOfMonthUtc(shift.start_time);
+    const monthEnd = monthStart ? endOfMonthUtc(monthStart) : null;
+
+    const usersResult = await db.query(
+      `SELECT
+         u.id,
+         u.email,
+         u.name,
+         u.role,
+         u.phone,
+         u.birth_date AS "birthDate",
+         u.is_active AS "isActive",
+         CASE
+           WHEN $1::text IS NULL OR $2::timestamptz IS NULL OR $3::timestamptz IS NULL THEN FALSE
+           ELSE EXISTS (
+             SELECT 1
+             FROM public.shift_registrations sr
+             JOIN public.shifts s
+               ON s.id = sr.shift_id
+             WHERE sr.user_id = u.id
+               AND sr.status IN ('pending', 'approved')
+               AND s.start_time >= $2
+               AND s.start_time < $3
+               AND (
+                 ($1 = 'dinner' AND (s.category = $4 OR s.title = $5))
+                 OR
+                 ($1 = 'cleaning' AND (s.category = $6 OR s.title = $7))
+               )
+           )
+         END AS has_month_assignment
+       FROM public.users u
+       WHERE u.role = 'user'
+       ORDER BY COALESCE(NULLIF(TRIM(u.name), ''), u.email) ASC, u.email ASC`,
+      [
+        resolvedShiftType,
+        monthStart ? monthStart.toISOString() : null,
+        monthEnd ? monthEnd.toISOString() : null,
+        shiftCategoriesByType.dinner,
+        shiftTitlesByType.dinner,
+        shiftCategoriesByType.cleaning,
+        shiftTitlesByType.cleaning,
+      ]
+    );
+
+    const defaultUsers = [];
+    const alreadyAssignedUsers = [];
+
+    for (const row of usersResult.rows) {
+      const user = {
+        id: row.id,
+        email: row.email,
+        name: row.name,
+        role: normalizeRole(row.role),
+        phone: row.phone,
+        birthDate: row.birthDate,
+        isActive: row.isActive,
+      };
+
+      if (row.has_month_assignment) {
+        alreadyAssignedUsers.push(user);
+      } else {
+        defaultUsers.push(user);
+      }
+    }
+
+    return res.json({
+      shiftType: resolvedShiftType,
+      monthStart: monthStart ? monthStart.toISOString() : null,
+      monthEnd: monthEnd ? monthEnd.toISOString() : null,
+      defaultUsers,
+      alreadyAssignedUsers,
+    });
   } catch (error) {
     return next(error);
   }
@@ -1504,6 +1632,7 @@ module.exports = {
   confirmOwnRegistration,
   createShift,
   getShiftById,
+  listShiftAssignmentPools,
   listMyRegisteredShifts,
   listWeekShifts,
   replaceShiftAssignments,

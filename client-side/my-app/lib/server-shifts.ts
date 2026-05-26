@@ -8,6 +8,7 @@ import {
   UpdateShiftPayload,
   WeekShiftsResponse,
 } from "@/lib/shifts";
+import type { BackendDirectoryUser } from "@/lib/server-users";
 
 const API_BASE_URL =
   process.env.API_BASE_URL ??
@@ -84,6 +85,24 @@ export async function fetchMyRegisteredShiftsForUser(userId: string) {
 
 export async function fetchShiftByIdForUser(userId: string, shiftId: string) {
   return backendShiftsFetch<{ shift: Shift }>(userId, `/shifts/${shiftId}`);
+}
+
+export type ShiftAssignmentPoolsResponse = {
+  shiftType: Shift["shiftType"] | null;
+  monthStart: string | null;
+  monthEnd: string | null;
+  defaultUsers: BackendDirectoryUser[];
+  alreadyAssignedUsers: BackendDirectoryUser[];
+};
+
+export async function fetchShiftAssignmentPoolsForUser(
+  userId: string,
+  shiftId: string,
+) {
+  return backendShiftsFetch<ShiftAssignmentPoolsResponse>(
+    userId,
+    `/shifts/${shiftId}/assignment-pools`,
+  );
 }
 
 export async function createShiftForUser(

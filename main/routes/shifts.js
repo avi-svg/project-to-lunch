@@ -8,6 +8,7 @@ router.use(shiftsController.requireActor);
 router.get('/week', shiftsController.listWeekShifts);
 router.get('/mine', shiftsController.listMyRegisteredShifts);
 router.get('/:id', shiftsController.getShiftById);
+router.get('/:id/assignment-pools', shiftsController.listShiftAssignmentPools);
 router.post('/', shiftsController.createShift);
 router.patch('/:id', shiftsController.updateShift);
 router.put('/:id/assignments', shiftsController.replaceShiftAssignments);
