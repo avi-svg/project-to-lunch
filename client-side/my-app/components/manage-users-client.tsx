@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState, useTransition } from "react";
+import {
+  FormEvent,
+  useDeferredValue,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import type { BackendDirectoryUser } from "@/lib/server-users";
 
 type Props = {
@@ -58,6 +64,10 @@ function createInitialFormState(): CreateFormState {
     password: "",
     isActive: true,
   };
+}
+
+function normalizeSearchValue(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
 }
 
 async function parseResponse(response: Response) {
@@ -326,12 +336,14 @@ function UserCard({ user, onUserUpdated }: UserCardProps) {
 export function ManageUsersClient({ initialUsers }: Props) {
   const router = useRouter();
   const [users, setUsers] = useState(initialUsers);
+  const [searchQuery, setSearchQuery] = useState("");
   const [createForm, setCreateForm] = useState<CreateFormState>(
     createInitialFormState,
   );
   const [createMessage, setCreateMessage] = useState("");
   const [createError, setCreateError] = useState("");
   const [isCreating, startCreateTransition] = useTransition();
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const admins = useMemo(
     () => users.filter((user) => user.role === "admin"),
@@ -345,6 +357,27 @@ export function ManageUsersClient({ initialUsers }: Props) {
     () => users.filter((user) => user.role === "user"),
     [users],
   );
+  const filteredUsers = useMemo(() => {
+    const normalizedQuery = normalizeSearchValue(deferredSearchQuery);
+
+    if (!normalizedQuery) {
+      return users;
+    }
+
+    return users.filter((user) => {
+      const searchableValues = [
+        user.name,
+        user.email,
+        user.phone,
+        user.birthDate,
+        user.id,
+      ];
+
+      return searchableValues.some((value) =>
+        normalizeSearchValue(value).includes(normalizedQuery),
+      );
+    });
+  }, [deferredSearchQuery, users]);
 
   function handleUserUpdated(updatedUser: BackendDirectoryUser) {
     setUsers((current) =>
@@ -638,13 +671,40 @@ export function ManageUsersClient({ initialUsers }: Props) {
             </span>
           </div>
 
+          <div className="mt-6 max-w-xl space-y-2">
+            <label className="space-y-2">
+              <span className="block text-sm font-medium text-stone-700">
+                חיפוש משתמש
+              </span>
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
+                placeholder="חיפוש לפי שם, אימייל, טלפון או מזהה"
+              />
+            </label>
+            {searchQuery.trim().length > 0 ? (
+              <p className="text-sm text-stone-500">
+                {filteredUsers.length} תוצאות עבור &quot;{searchQuery.trim()}&quot;
+              </p>
+            ) : null}
+          </div>
+
+          {users.length > 0 &&
+          searchQuery.trim().length > 0 &&
+          filteredUsers.length === 0 ? (
+            <div className="mt-6 rounded-3xl border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-600">
+              לא נמצאו משתמשים עבור &quot;{searchQuery.trim()}&quot;.
+            </div>
+          ) : null}
+
           {users.length === 0 ? (
             <div className="mt-6 rounded-3xl border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-600">
               לא נמצאו משתמשים להצגה.
             </div>
-          ) : (
+          ) : filteredUsers.length === 0 && searchQuery.trim().length > 0 ? null : (
             <div className="mt-6 space-y-4">
-              {users.map((user) => (
+              {filteredUsers.map((user) => (
                 <UserCard
                   key={user.id}
                   user={user}
