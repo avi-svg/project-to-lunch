@@ -79,6 +79,7 @@ export function ShiftSwapRequestsClient({
     () => requests.filter((request) => request.requesterUserId === currentUserId),
     [currentUserId, requests],
   );
+
   const boardRequests = useMemo(() => {
     if (isStaffView) {
       return requests;
@@ -120,7 +121,6 @@ export function ShiftSwapRequestsClient({
   function renderRequestCard(request: ShiftSwapRequest) {
     const isOwner = request.requesterUserId === currentUserId;
     const canCancel = isOwner && isActiveStatus(request.status);
-    const canApprove = isStaffView && request.status === "pending";
     const canReject = isStaffView && request.status === "pending";
     const canClose = isStaffView && request.status === "approved";
 
@@ -163,19 +163,8 @@ export function ShiftSwapRequestsClient({
               נפתחה ב-{formatDateTime(request.createdAt)}
             </p>
 
-            {canApprove || canReject || canClose || canCancel ? (
+            {canReject || canClose || canCancel ? (
               <div className="space-y-2">
-                {canApprove ? (
-                  <button
-                    type="button"
-                    onClick={() => handleStatusChange(request.id, "approved")}
-                    disabled={updatingRequestId === request.id}
-                    className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                  >
-                    {updatingRequestId === request.id ? "שומר..." : "אישור לפרסום"}
-                  </button>
-                ) : null}
-
                 {canReject ? (
                   <button
                     type="button"
