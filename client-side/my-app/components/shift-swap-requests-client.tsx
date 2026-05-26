@@ -275,17 +275,24 @@ export function ShiftSwapRequestsClient({
     const canCancelRequest = isOwner && isActiveRequestStatus(request.status);
     const canRejectRequest = isStaffView && request.status === "pending";
     const canCloseRequest = isStaffView && request.status === "approved";
+    const isOpenForVolunteers =
+      !isStaffView && !isOwner && request.status === "approved";
     const canVolunteer =
-      !isStaffView &&
-      !isOwner &&
-      request.status === "approved" &&
-      request.myVolunteerOffer === null;
+      isOpenForVolunteers && request.myVolunteerOffer === null;
 
     return (
       <article
         key={request.id}
         className="rounded-3xl border border-stone-200 bg-stone-50 p-5"
       >
+        {isOpenForVolunteers ? (
+          <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+            {request.myVolunteerOffer
+              ? `בקשת החלפה פתוחה. ההצעה שלך כרגע: ${formatOfferStatus(request.myVolunteerOffer.status)}`
+              : "בקשת החלפה פתוחה להתנדבות. אם מתאים לך להחליף, אפשר להגיש כאן מועמדות לצוות."}
+          </div>
+        ) : null}
+
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
             <p className="text-lg font-semibold text-stone-900">
@@ -327,12 +334,6 @@ export function ShiftSwapRequestsClient({
             <p className="text-xs leading-6 text-stone-500">
               נפתחה ב-{formatDateTime(request.createdAt)}
             </p>
-
-            {canVolunteer ? (
-              <p className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-                הבקשה הזו פתוחה למתנדבים. אפשר להציע את עצמך כמחליף/ה והצוות יאשר את ההחלפה.
-              </p>
-            ) : null}
 
             {request.myVolunteerOffer ? (
               <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
