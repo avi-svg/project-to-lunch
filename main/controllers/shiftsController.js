@@ -486,7 +486,11 @@ async function sendShiftAssignmentNotifications(shift, users) {
   return summary;
 }
 
-function buildShiftAssignmentResponseMessage(notificationSummary) {
+function buildShiftAssignmentResponseMessage(notificationSummary, assignmentType = 'standard') {
+  if (assignmentType === 'forced') {
+    return 'Shift assignments updated successfully. Forced assignments were approved immediately without sending WhatsApp approval requests.';
+  }
+
   if (!notificationSummary) {
     return 'Shift assignments updated successfully.';
   }
@@ -1679,7 +1683,11 @@ async function registerForShift(req, res, next) {
 
 async function replaceShiftAssignments(req, res, next) {
   const { id } = req.params;
-  const { userIds } = req.body || {};
+  const { userIds, assignmentType: rawAssignmentType } = req.body || {};
+  const assignmentType =
+    rawAssignmentType === 'forced' ? 'forced' : rawAssignmentType === 'standard' || rawAssignmentType == null
+      ? 'standard'
+      : null;
 
   if (!isValidUuid(id)) {
     return res.status(400).json({
@@ -1690,6 +1698,12 @@ async function replaceShiftAssignments(req, res, next) {
   if (!Array.isArray(userIds)) {
     return res.status(400).json({
       message: 'userIds must be an array of user ids.',
+    });
+  }
+
+  if (!assignmentType) {
+    return res.status(400).json({
+      message: "assignmentType must be either 'standard' or 'forced'.",
     });
   }
 
@@ -1802,51 +1816,88 @@ async function replaceShiftAssignments(req, res, next) {
       targetUsersResult.rows.map((user) => [user.id, user])
     );
     const usersToNotifyById = new Map();
+    const nextSelectedStatus = assignmentType === 'forced' ? 'approved' : 'pending';
+    const forcedReviewNote = 'Force assigned by staff.';
 
     for (const userId of effectiveSelectedUserIds) {
       const registration = existingRegistrationsByUserId.get(userId);
 
       if (!registration) {
-        await client.query(
-          `INSERT INTO public.shift_registrations (
-             id,
-             shift_id,
-             user_id,
-             status,
-             reviewed_at,
-             reviewed_by_user_id,
-             review_note
-           )
-           VALUES ($1, $2, $3, 'pending', NULL, NULL, NULL)`,
-          [randomUUID(), id, userId]
-        );
+        if (assignmentType === 'forced') {
+          await client.query(
+            `INSERT INTO public.shift_registrations (
+               id,
+               shift_id,
+               user_id,
+               status,
+               reviewed_at,
+               reviewed_by_user_id,
+               review_note
+             )
+             VALUES ($1, $2, $3, 'approved', NOW(), $4, $5)`,
+            [randomUUID(), id, userId, req.actor.id, forcedReviewNote]
+          );
+        } else {
+          await client.query(
+            `INSERT INTO public.shift_registrations (
+               id,
+               shift_id,
+               user_id,
+               status,
+               reviewed_at,
+               reviewed_by_user_id,
+               review_note
+             )
+             VALUES ($1, $2, $3, 'pending', NULL, NULL, NULL)`,
+            [randomUUID(), id, userId]
+          );
+        }
 
         const targetUser = targetUsersById.get(userId);
 
-        if (targetUser) {
+        if (targetUser && assignmentType === 'standard') {
           usersToNotifyById.set(userId, targetUser);
         }
 
         continue;
       }
 
-      if (registration.status === 'pending' || registration.status === 'approved') {
+      if (registration.status === 'approved') {
+        continue;
+      }
+
+      if (registration.status === 'pending') {
+        if (assignmentType === 'standard') {
+          continue;
+        }
+
+        await client.query(
+          `UPDATE public.shift_registrations
+           SET status = 'approved',
+               reviewed_at = NOW(),
+               reviewed_by_user_id = $2,
+               review_note = $3
+           WHERE id = $1`,
+          [registration.id, req.actor.id, forcedReviewNote]
+        );
         continue;
       }
 
       await client.query(
         `UPDATE public.shift_registrations
-         SET status = 'pending',
-             reviewed_at = NULL,
-             reviewed_by_user_id = NULL,
-             review_note = NULL
+         SET status = $2,
+             reviewed_at = ${assignmentType === 'forced' ? 'NOW()' : 'NULL'},
+             reviewed_by_user_id = ${assignmentType === 'forced' ? '$3' : 'NULL'},
+             review_note = ${assignmentType === 'forced' ? '$4' : 'NULL'}
          WHERE id = $1`,
-        [registration.id]
+        assignmentType === 'forced'
+          ? [registration.id, nextSelectedStatus, req.actor.id, forcedReviewNote]
+          : [registration.id, nextSelectedStatus]
       );
 
       const targetUser = targetUsersById.get(userId);
 
-      if (targetUser) {
+      if (targetUser && assignmentType === 'standard') {
         usersToNotifyById.set(userId, targetUser);
       }
     }
@@ -1893,13 +1944,17 @@ async function replaceShiftAssignments(req, res, next) {
       available_slots: Math.max(Number(updatedShiftResult.rows[0].capacity) - reservedSlots, 0),
     });
     formattedShift.registrations = await loadShiftRegistrations(id);
-    const notificationSummary = await sendShiftAssignmentNotifications(
-      updatedShiftResult.rows[0],
-      Array.from(usersToNotifyById.values())
-    );
+    const notificationSummary =
+      assignmentType === 'standard'
+        ? await sendShiftAssignmentNotifications(
+            updatedShiftResult.rows[0],
+            Array.from(usersToNotifyById.values())
+          )
+        : undefined;
 
     return res.json({
-      message: buildShiftAssignmentResponseMessage(notificationSummary),
+      message: buildShiftAssignmentResponseMessage(notificationSummary, assignmentType),
+      appliedAssignmentType: assignmentType,
       notificationSummary,
       shift: formattedShift,
     });

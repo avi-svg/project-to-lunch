@@ -2,6 +2,7 @@ export type UserRole = "admin" | "staff" | "user";
 export type ShiftStatus = "open" | "closed" | "cancelled" | "completed";
 export type ShiftType = "dinner" | "cleaning";
 export type ShiftAssignmentMode = "assign-later" | "assign-now";
+export type ShiftAssignmentRequestType = "standard" | "forced";
 export type ShiftRegistrationStatus =
   | "pending"
   | "approved"
@@ -143,6 +144,7 @@ export type ShiftSwapRequestsResponse = {
 export type ReplaceShiftAssignmentsResponse = {
   message: string;
   shift: Shift;
+  appliedAssignmentType?: ShiftAssignmentRequestType;
   notificationSummary?: ShiftAssignmentNotificationSummary;
 };
 
@@ -242,12 +244,16 @@ export async function updateShift(shiftId: string, payload: UpdateShiftPayload) 
   );
 }
 
-export async function replaceShiftAssignments(shiftId: string, userIds: string[]) {
+export async function replaceShiftAssignments(
+  shiftId: string,
+  userIds: string[],
+  assignmentType: ShiftAssignmentRequestType = "standard",
+) {
   return internalApiFetch<ReplaceShiftAssignmentsResponse>(
     `/api/shifts/${shiftId}/assignments`,
     {
       method: "PUT",
-      body: JSON.stringify({ userIds }),
+      body: JSON.stringify({ userIds, assignmentType }),
     },
   );
 }

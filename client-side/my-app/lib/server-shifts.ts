@@ -3,6 +3,7 @@ import {
   MyRegisteredShiftsResponse,
   ReplaceShiftAssignmentsResponse,
   Shift,
+  ShiftAssignmentRequestType,
   ShiftSwapRequest,
   ShiftSwapRequestsResponse,
   ShiftRegistration,
@@ -145,13 +146,14 @@ export async function replaceShiftAssignmentsForUser(
   userId: string,
   shiftId: string,
   userIds: string[],
+  assignmentType: ShiftAssignmentRequestType = "standard",
 ) {
   return backendShiftsFetch<ReplaceShiftAssignmentsResponse>(
     userId,
     `/shifts/${shiftId}/assignments`,
     {
       method: "PUT",
-      body: JSON.stringify({ userIds }),
+      body: JSON.stringify({ userIds, assignmentType }),
     },
   );
 }

@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getShiftAssignmentPools,
   replaceShiftAssignments,
   type Shift,
+  type ShiftAssignmentRequestType,
   type ShiftRegistrationStatus,
 } from "@/lib/shifts";
 import type { BackendDirectoryUser } from "@/lib/server-users";
@@ -111,6 +112,21 @@ export function ShiftAssignmentClient({
     message: string;
   } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [assignmentType, setAssignmentType] =
+    useState<ShiftAssignmentRequestType>("standard");
+
+  useEffect(() => {
+    setAssignedUsers((current) =>
+      current.map((user) =>
+        user.registrationId
+          ? user
+          : {
+              ...user,
+              status: assignmentType === "forced" ? "approved" : "pending",
+            },
+      ),
+    );
+  }, [assignmentType]);
 
   const assignedUserIds = useMemo(
     () => new Set(assignedUsers.map((user) => user.id)),
@@ -193,7 +209,7 @@ export function ShiftAssignmentClient({
       id: nextUser.id,
       email: nextUser.email,
       name: nextUser.name,
-      status: "pending",
+      status: assignmentType === "forced" ? "approved" : "pending",
       registrationId: null,
     };
 
@@ -225,6 +241,7 @@ export function ShiftAssignmentClient({
       const result = await replaceShiftAssignments(
         shift.id,
         assignedUsers.map((user) => user.id),
+        assignmentType,
       );
       const nextAssignedUsers = getAssignedUsersFromShift(result.shift);
       const pools = await getShiftAssignmentPools(shift.id);
@@ -236,7 +253,9 @@ export function ShiftAssignmentClient({
       setFeedback({
         variant: "success",
         message:
-          "השינויים נשמרו. המשתמשים ששויכו יראו את הפעילות כבקשה שממתינה לאישור השתתפות.",
+          result.appliedAssignmentType === "forced"
+            ? "השיבוץ נשמר כשיבוץ מאולץ. המשתמשים שאויכו אושרו מיידית ולא נשלחה בקשת אישור בוואטסאפ."
+            : "השיבוץ נשמר. המשתמשים שאויכו קיבלו בקשת אישור בוואטסאפ והשיבוץ שלהם ממתין לאישור.",
       });
     } catch (error) {
       setFeedback({
@@ -342,18 +361,61 @@ export function ShiftAssignmentClient({
 
           <div className="mt-6">
             {hasChanges ? (
-              <div className="mb-4 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void handleSaveAssignments()}
-                  disabled={isSaving}
-                  className="rounded-2xl bg-stone-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-400"
-                >
-                  שמירה ועדכון המשתמשים
-                </button>
-                <span className="text-sm text-stone-600">
-                  השיוכים השתנו ועדיין לא נשמרו.
-                </span>
+              <div className="mb-4 space-y-4 rounded-[1.75rem] border border-stone-200 bg-stone-50 p-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-stone-900">סוג שיבוץ</p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="flex cursor-pointer items-start gap-3 rounded-3xl border border-stone-200 bg-white p-4 text-right">
+                      <input
+                        type="radio"
+                        name="assignment-type"
+                        value="standard"
+                        checked={assignmentType === "standard"}
+                        onChange={() => setAssignmentType("standard")}
+                        className="mt-1 h-4 w-4 accent-stone-900"
+                      />
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-stone-900">לא מאולץ</p>
+                        <p className="text-sm leading-6 text-stone-600">
+                          ישלח למשתמשים אישור בוואטסאפ והשיבוץ יישמר כממתין לאישור.
+                        </p>
+                      </div>
+                    </label>
+
+                    <label className="flex cursor-pointer items-start gap-3 rounded-3xl border border-stone-200 bg-white p-4 text-right">
+                      <input
+                        type="radio"
+                        name="assignment-type"
+                        value="forced"
+                        checked={assignmentType === "forced"}
+                        onChange={() => setAssignmentType("forced")}
+                        className="mt-1 h-4 w-4 accent-stone-900"
+                      />
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-stone-900">מאולץ</p>
+                        <p className="text-sm leading-6 text-stone-600">
+                          לא תישלח הודעת אישור בוואטסאפ והשיבוץ יאושר מיידית.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveAssignments()}
+                    disabled={isSaving}
+                    className="rounded-2xl bg-stone-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-400"
+                  >
+                    שמירה ועדכון המשתמשים
+                  </button>
+                  <span className="text-sm text-stone-600">
+                    {assignmentType === "forced"
+                      ? "השינויים יישמרו כשיבוץ מאולץ ויאושרו מיד."
+                      : "השינויים יישמרו כשיבוץ רגיל ויישלחו לאישור בוואטסאפ."}
+                  </span>
+                </div>
               </div>
             ) : null}
 
