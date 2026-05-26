@@ -2,10 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  createShiftSwapVolunteerOffer,
   type ShiftSwapRequest,
   type ShiftSwapRequestStatus,
+  type ShiftSwapVolunteerOffer,
+  type ShiftSwapVolunteerOfferStatus,
   type UserRole,
   updateShiftSwapRequest,
+  updateShiftSwapVolunteerOffer,
 } from "@/lib/shifts";
 
 type Props = {
@@ -49,8 +53,28 @@ function formatSwapStatus(status: ShiftSwapRequestStatus) {
   return "ממתינה לטיפול";
 }
 
-function isActiveStatus(status: ShiftSwapRequestStatus) {
+function formatOfferStatus(status: ShiftSwapVolunteerOfferStatus) {
+  if (status === "approved") {
+    return "אושר/ה כמחליף/ה";
+  }
+
+  if (status === "rejected") {
+    return "נדחה";
+  }
+
+  if (status === "cancelled") {
+    return "בוטל";
+  }
+
+  return "ממתין לאישור צוות";
+}
+
+function isActiveRequestStatus(status: ShiftSwapRequestStatus) {
   return status === "pending" || status === "approved";
+}
+
+function isCancellableOfferStatus(status: ShiftSwapVolunteerOfferStatus) {
+  return status === "pending";
 }
 
 export function ShiftSwapRequestsClient({
@@ -66,7 +90,7 @@ export function ShiftSwapRequestsClient({
   const [requests, setRequests] = useState(initialRequests);
   const [actionMessage, setActionMessage] = useState("");
   const [actionError, setActionError] = useState(initialError);
-  const [updatingRequestId, setUpdatingRequestId] = useState<string | null>(null);
+  const [processingKey, setProcessingKey] = useState<string | null>(null);
   const isStaffView = currentUserRole === "staff" || currentUserRole === "admin";
 
   useEffect(() => {
@@ -87,42 +111,175 @@ export function ShiftSwapRequestsClient({
 
     return requests.filter(
       (request) =>
-        request.requesterUserId !== currentUserId && isActiveStatus(request.status),
+        request.requesterUserId !== currentUserId &&
+        (isActiveRequestStatus(request.status) || request.myVolunteerOffer !== null),
     );
   }, [currentUserId, isStaffView, requests]);
 
-  async function handleStatusChange(
+  function applyRequestUpdate(nextRequest: ShiftSwapRequest, message: string) {
+    setRequests((current) => {
+      const nextRequests = current.map((request) =>
+        request.id === nextRequest.id ? nextRequest : request,
+      );
+      onRequestsChange?.(nextRequests);
+      return nextRequests;
+    });
+    setActionMessage(message);
+  }
+
+  async function handleRequestStatusChange(
     requestId: string,
     status: ShiftSwapRequestStatus,
   ) {
     setActionMessage("");
     setActionError("");
-    setUpdatingRequestId(requestId);
+    setProcessingKey(`request:${requestId}:${status}`);
 
     try {
       const result = await updateShiftSwapRequest(requestId, { status });
-      setRequests((current) => {
-        const nextRequests = current.map((request) =>
-          request.id === requestId ? result.request : request,
-        );
-        onRequestsChange?.(nextRequests);
-        return nextRequests;
-      });
-      setActionMessage(result.message);
+      applyRequestUpdate(result.request, result.message);
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "לא ניתן לעדכן את בקשת ההחלפה כרגע.",
       );
     } finally {
-      setUpdatingRequestId(null);
+      setProcessingKey(null);
     }
+  }
+
+  async function handleVolunteerOfferCreate(requestId: string) {
+    setActionMessage("");
+    setActionError("");
+    setProcessingKey(`offer:${requestId}:create`);
+
+    try {
+      const result = await createShiftSwapVolunteerOffer(requestId);
+      applyRequestUpdate(result.request, result.message);
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "לא ניתן לשלוח הצעת החלפה כרגע.",
+      );
+    } finally {
+      setProcessingKey(null);
+    }
+  }
+
+  async function handleVolunteerOfferStatusChange(
+    requestId: string,
+    offerId: string,
+    status: ShiftSwapVolunteerOfferStatus,
+  ) {
+    setActionMessage("");
+    setActionError("");
+    setProcessingKey(`offer:${offerId}:${status}`);
+
+    try {
+      const result = await updateShiftSwapVolunteerOffer(requestId, offerId, {
+        status,
+      });
+      applyRequestUpdate(result.request, result.message);
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "לא ניתן לעדכן את הצעת ההחלפה כרגע.",
+      );
+    } finally {
+      setProcessingKey(null);
+    }
+  }
+
+  function renderVolunteerOfferCard(
+    request: ShiftSwapRequest,
+    offer: ShiftSwapVolunteerOffer,
+  ) {
+    const isMine = offer.volunteerUserId === currentUserId;
+    const canApprove = isStaffView && offer.status === "pending" && request.status === "approved";
+    const canReject = isStaffView && offer.status === "pending";
+    const canCancel = isMine && isCancellableOfferStatus(offer.status);
+
+    return (
+      <article
+        key={offer.id}
+        className="rounded-2xl border border-stone-200 bg-white p-4"
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-1">
+            <p className="font-medium text-stone-900">
+              {offer.volunteer.name ?? offer.volunteer.email}
+            </p>
+            <p className="text-sm text-stone-600">{offer.volunteer.email}</p>
+            <p className="text-sm text-stone-600">
+              הציע/ה את עצמו/ה ב-{formatDateTime(offer.createdAt)}
+            </p>
+            {offer.reviewNote ? (
+              <p className="text-sm text-stone-700">הערה: {offer.reviewNote}</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2 lg:min-w-56">
+            <span className="inline-flex rounded-full bg-stone-900 px-3 py-1 text-xs font-semibold text-white">
+              {formatOfferStatus(offer.status)}
+            </span>
+
+            {canApprove || canReject || canCancel ? (
+              <div className="space-y-2">
+                {canApprove ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleVolunteerOfferStatusChange(request.id, offer.id, "approved")
+                    }
+                    disabled={processingKey === `offer:${offer.id}:approved`}
+                    className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                  >
+                    {processingKey === `offer:${offer.id}:approved`
+                      ? "שומר..."
+                      : "אישור ההחלפה"}
+                  </button>
+                ) : null}
+
+                {canReject ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleVolunteerOfferStatusChange(request.id, offer.id, "rejected")
+                    }
+                    disabled={processingKey === `offer:${offer.id}:rejected`}
+                    className="w-full rounded-2xl bg-amber-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-amber-300"
+                  >
+                    דחיית מועמדות
+                  </button>
+                ) : null}
+
+                {canCancel ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleVolunteerOfferStatusChange(request.id, offer.id, "cancelled")
+                    }
+                    disabled={processingKey === `offer:${offer.id}:cancelled`}
+                    className="w-full rounded-2xl border border-rose-300 bg-white px-4 py-3 text-sm font-medium text-rose-700 transition hover:border-rose-500 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400"
+                  >
+                    ביטול ההצעה שלי
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </article>
+    );
   }
 
   function renderRequestCard(request: ShiftSwapRequest) {
     const isOwner = request.requesterUserId === currentUserId;
-    const canCancel = isOwner && isActiveStatus(request.status);
-    const canReject = isStaffView && request.status === "pending";
-    const canClose = isStaffView && request.status === "approved";
+    const canCancelRequest = isOwner && isActiveRequestStatus(request.status);
+    const canRejectRequest = isStaffView && request.status === "pending";
+    const canCloseRequest = isStaffView && request.status === "approved";
+    const canVolunteer =
+      !isStaffView &&
+      !isOwner &&
+      request.status === "approved" &&
+      request.myVolunteerOffer === null;
 
     return (
       <article
@@ -146,7 +303,15 @@ export function ShiftSwapRequestsClient({
             {request.shift.location ? (
               <p className="text-sm text-stone-600">מיקום: {request.shift.location}</p>
             ) : null}
-            <p className="text-sm leading-6 text-stone-700">{request.reason}</p>
+            <p className="text-sm leading-6 text-stone-700">
+              {request.reason ??
+                (request.canViewReason
+                  ? "לא נכתבה סיבה לבקשת ההחלפה."
+                  : "סיבת הבקשה מוצגת לאיש צוות ולמבקש/ת בלבד.")}
+            </p>
+            <p className="text-sm text-stone-600">
+              הוגשו {request.volunteerOffersCount} הצעות החלפה
+            </p>
             {request.reviewNote ? (
               <p className="rounded-2xl bg-white px-4 py-3 text-sm text-stone-700">
                 הערת צוות: {request.reviewNote}
@@ -154,7 +319,7 @@ export function ShiftSwapRequestsClient({
             ) : null}
           </div>
 
-          <div className="space-y-3 lg:min-w-56">
+          <div className="space-y-3 lg:min-w-64">
             <span className="inline-flex rounded-full bg-stone-900 px-3 py-1 text-xs font-semibold text-white">
               {formatSwapStatus(request.status)}
             </span>
@@ -163,35 +328,54 @@ export function ShiftSwapRequestsClient({
               נפתחה ב-{formatDateTime(request.createdAt)}
             </p>
 
-            {canReject || canClose || canCancel ? (
+            {request.myVolunteerOffer ? (
+              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                ההצעה שלך: {formatOfferStatus(request.myVolunteerOffer.status)}
+              </div>
+            ) : null}
+
+            {canVolunteer ? (
+              <button
+                type="button"
+                onClick={() => handleVolunteerOfferCreate(request.id)}
+                disabled={processingKey === `offer:${request.id}:create`}
+                className="w-full rounded-2xl bg-sky-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-sky-300"
+              >
+                {processingKey === `offer:${request.id}:create`
+                  ? "שולח..."
+                  : "אני יכול/ה להחליף"}
+              </button>
+            ) : null}
+
+            {canRejectRequest || canCloseRequest || canCancelRequest ? (
               <div className="space-y-2">
-                {canReject ? (
+                {canRejectRequest ? (
                   <button
                     type="button"
-                    onClick={() => handleStatusChange(request.id, "rejected")}
-                    disabled={updatingRequestId === request.id}
+                    onClick={() => handleRequestStatusChange(request.id, "rejected")}
+                    disabled={processingKey === `request:${request.id}:rejected`}
                     className="w-full rounded-2xl bg-amber-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-amber-300"
                   >
                     דחיית בקשה
                   </button>
                 ) : null}
 
-                {canClose ? (
+                {canCloseRequest ? (
                   <button
                     type="button"
-                    onClick={() => handleStatusChange(request.id, "closed")}
-                    disabled={updatingRequestId === request.id}
+                    onClick={() => handleRequestStatusChange(request.id, "closed")}
+                    disabled={processingKey === `request:${request.id}:closed`}
                     className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-medium text-stone-900 transition hover:border-stone-900 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400"
                   >
                     סגירת בקשה
                   </button>
                 ) : null}
 
-                {canCancel ? (
+                {canCancelRequest ? (
                   <button
                     type="button"
-                    onClick={() => handleStatusChange(request.id, "cancelled")}
-                    disabled={updatingRequestId === request.id}
+                    onClick={() => handleRequestStatusChange(request.id, "cancelled")}
+                    disabled={processingKey === `request:${request.id}:cancelled`}
                     className="w-full rounded-2xl border border-rose-300 bg-white px-4 py-3 text-sm font-medium text-rose-700 transition hover:border-rose-500 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400"
                   >
                     ביטול בקשה
@@ -201,6 +385,29 @@ export function ShiftSwapRequestsClient({
             ) : null}
           </div>
         </div>
+
+        {(request.volunteerOffers.length > 0 || request.myVolunteerOffer) && (
+          <div className="mt-5 space-y-3">
+            <div>
+              <p className="text-sm font-semibold tracking-[0.18em] text-stone-500">
+                מועמדים להחלפה
+              </p>
+              <h3 className="mt-2 text-lg font-semibold text-stone-900">
+                {isStaffView
+                  ? "הצעות שממתינות לעיון צוות"
+                  : isOwner
+                    ? "מי הציע/ה להחליף אותך"
+                    : "הצעת ההחלפה שלך"}
+              </h3>
+            </div>
+
+            <div className="space-y-3">
+              {request.volunteerOffers.map((offer) =>
+                renderVolunteerOfferCard(request, offer),
+              )}
+            </div>
+          </div>
+        )}
       </article>
     );
   }
@@ -255,12 +462,12 @@ export function ShiftSwapRequestsClient({
         <div className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold text-stone-900">
-              {isStaffView ? "בקשות לטיפול צוות" : "לידיעת שאר המשתמשים"}
+              {isStaffView ? "בקשות לטיפול צוות" : "לוח החלפות פעיל"}
             </h2>
             <p className="mt-1 text-sm text-stone-600">
               {isStaffView
-                ? "כאן הצוות יכול לדחות או לסגור בקשות החלפה שכבר פורסמו."
-                : "כאן מוצגות הבקשות הפעילות כדי שכל המשתמשים יוכלו לדעת על צורך בהחלפה."}
+                ? "כאן הצוות רואה את סיבת הבקשה, את המועמדים להחלפה, ומאשר את ההחלפה בפועל."
+                : "כאן אפשר לראות בקשות פעילות של אחרים, להציע החלפה, ולעקוב גם אחרי ההצעות שכבר שלחת."}
             </p>
           </div>
 

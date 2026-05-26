@@ -13,6 +13,11 @@ export type ShiftSwapRequestStatus =
   | "rejected"
   | "cancelled"
   | "closed";
+export type ShiftSwapVolunteerOfferStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "cancelled";
 
 export type ShiftAssignmentPoolUser = {
   id: string;
@@ -85,12 +90,16 @@ export type ShiftSwapRequest = {
   requesterUserId: string;
   requesterRegistrationId: string;
   status: ShiftSwapRequestStatus;
-  reason: string;
+  reason: string | null;
+  canViewReason: boolean;
   createdAt: string;
   updatedAt: string;
   reviewedAt: string | null;
   reviewNote: string | null;
   requesterRegistrationStatus: ShiftRegistrationStatus;
+  volunteerOffersCount: number;
+  volunteerOffers: ShiftSwapVolunteerOffer[];
+  myVolunteerOffer: ShiftSwapVolunteerOffer | null;
   requester: ShiftActor;
   reviewedBy: Omit<ShiftActor, "role"> | null;
   shift: {
@@ -102,6 +111,19 @@ export type ShiftSwapRequest = {
     endTime: string;
     status: ShiftStatus;
   };
+};
+
+export type ShiftSwapVolunteerOffer = {
+  id: string;
+  swapRequestId: string;
+  volunteerUserId: string;
+  status: ShiftSwapVolunteerOfferStatus;
+  createdAt: string;
+  updatedAt: string;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  volunteer: ShiftActor;
+  reviewedBy: Omit<ShiftActor, "role"> | null;
 };
 
 export type WeekShiftsResponse = {
@@ -158,6 +180,11 @@ export type CreateShiftSwapRequestPayload = {
 
 export type UpdateShiftSwapRequestPayload = {
   status: ShiftSwapRequestStatus;
+  reviewNote?: string;
+};
+
+export type UpdateShiftSwapVolunteerOfferPayload = {
+  status: ShiftSwapVolunteerOfferStatus;
   reviewNote?: string;
 };
 
@@ -317,6 +344,29 @@ export async function updateShiftSwapRequest(
 ) {
   return internalApiFetch<{ message: string; request: ShiftSwapRequest }>(
     `/api/shifts/swap-requests/${requestId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function createShiftSwapVolunteerOffer(requestId: string) {
+  return internalApiFetch<{ message: string; request: ShiftSwapRequest }>(
+    `/api/shifts/swap-requests/${requestId}/volunteers`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function updateShiftSwapVolunteerOffer(
+  requestId: string,
+  offerId: string,
+  payload: UpdateShiftSwapVolunteerOfferPayload,
+) {
+  return internalApiFetch<{ message: string; request: ShiftSwapRequest }>(
+    `/api/shifts/swap-requests/${requestId}/volunteers/${offerId}`,
     {
       method: "PATCH",
       body: JSON.stringify(payload),

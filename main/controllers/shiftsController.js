@@ -28,6 +28,12 @@ const swapRequestStatuses = new Set([
   'cancelled',
   'closed',
 ]);
+const swapVolunteerOfferStatuses = new Set([
+  'pending',
+  'approved',
+  'rejected',
+  'cancelled',
+]);
 const shiftTitlesByType = {
   dinner: 'תורנות ארוחת ערב',
   cleaning: 'תורנות ניקיון',
@@ -317,19 +323,70 @@ function formatRegistrationRow(row) {
   };
 }
 
-function formatSwapRequestRow(row) {
+function formatSwapVolunteerOfferRow(row) {
+  return {
+    id: row.id,
+    swapRequestId: row.swap_request_id,
+    volunteerUserId: row.volunteer_user_id,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    reviewedAt: row.reviewed_at,
+    reviewNote: row.review_note,
+    volunteer: {
+      id: row.volunteer_user_id,
+      name: row.volunteer_name,
+      email: row.volunteer_email,
+      role: normalizeRole(row.volunteer_role),
+    },
+    reviewedBy: row.reviewed_by_user_id
+      ? {
+          id: row.reviewed_by_user_id,
+          name: row.offer_reviewed_by_name,
+          email: row.offer_reviewed_by_email,
+        }
+      : null,
+  };
+}
+
+function canActorViewSwapReason(actor, row) {
+  return isStaffLike(actor?.role) || row.requester_user_id === actor?.id;
+}
+
+function canActorViewVolunteerOffer(actor, row) {
+  return (
+    isStaffLike(actor?.role) ||
+    row.requester_user_id === actor?.id ||
+    row.volunteer_user_id === actor?.id
+  );
+}
+
+function formatSwapRequestRow(row, actor, volunteerOffers = []) {
+  const visibleVolunteerOffers = volunteerOffers.filter((offer) =>
+    canActorViewVolunteerOffer(actor, {
+      requester_user_id: row.requester_user_id,
+      volunteer_user_id: offer.volunteerUserId,
+    })
+  );
+  const myVolunteerOffer =
+    volunteerOffers.find((offer) => offer.volunteerUserId === actor?.id) ?? null;
+
   return {
     id: row.id,
     shiftId: row.shift_id,
     requesterUserId: row.requester_user_id,
     requesterRegistrationId: row.requester_registration_id,
     status: row.status,
-    reason: row.reason,
+    reason: canActorViewSwapReason(actor, row) ? row.reason : null,
+    canViewReason: canActorViewSwapReason(actor, row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     reviewedAt: row.reviewed_at,
     reviewNote: row.review_note,
     requesterRegistrationStatus: row.requester_registration_status,
+    volunteerOffersCount: volunteerOffers.length,
+    volunteerOffers: visibleVolunteerOffers,
+    myVolunteerOffer,
     requester: {
       id: row.requester_user_id,
       name: row.requester_name,
@@ -523,7 +580,50 @@ async function loadFormattedRegistrationById(registrationId, client = db) {
   return result.rows.length > 0 ? formatRegistrationRow(result.rows[0]) : null;
 }
 
-async function loadFormattedSwapRequestById(requestId, client = db) {
+async function loadSwapVolunteerOffersByRequestIds(requestIds, client = db) {
+  if (!Array.isArray(requestIds) || requestIds.length === 0) {
+    return new Map();
+  }
+
+  const result = await client.query(
+    `SELECT
+       offer.*,
+       volunteer.name AS volunteer_name,
+       volunteer.email AS volunteer_email,
+       volunteer.role AS volunteer_role,
+       reviewer.name AS offer_reviewed_by_name,
+       reviewer.email AS offer_reviewed_by_email
+     FROM public.shift_swap_request_volunteers offer
+     JOIN public.users volunteer
+       ON volunteer.id = offer.volunteer_user_id
+     LEFT JOIN public.users reviewer
+       ON reviewer.id = offer.reviewed_by_user_id
+     WHERE offer.swap_request_id = ANY($1::uuid[])
+     ORDER BY
+       CASE offer.status
+         WHEN 'approved' THEN 0
+         WHEN 'pending' THEN 1
+         WHEN 'rejected' THEN 2
+         WHEN 'cancelled' THEN 3
+         ELSE 4
+       END,
+       offer.created_at ASC`,
+    [requestIds]
+  );
+
+  const offersByRequestId = new Map();
+
+  for (const row of result.rows) {
+    const offer = formatSwapVolunteerOfferRow(row);
+    const current = offersByRequestId.get(row.swap_request_id) ?? [];
+    current.push(offer);
+    offersByRequestId.set(row.swap_request_id, current);
+  }
+
+  return offersByRequestId;
+}
+
+async function loadFormattedSwapRequestById(requestId, actor, client = db) {
   const result = await client.query(
     `SELECT
        ssr.*,
@@ -553,7 +653,16 @@ async function loadFormattedSwapRequestById(requestId, client = db) {
     [requestId]
   );
 
-  return result.rows.length > 0 ? formatSwapRequestRow(result.rows[0]) : null;
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  const offersByRequestId = await loadSwapVolunteerOffersByRequestIds([requestId], client);
+  return formatSwapRequestRow(
+    result.rows[0],
+    actor,
+    offersByRequestId.get(requestId) ?? []
+  );
 }
 
 async function loadVisibleSwapRequestsForActor(actor, client = db) {
@@ -604,7 +713,12 @@ async function loadVisibleSwapRequestsForActor(actor, client = db) {
     values
   );
 
-  return result.rows.map(formatSwapRequestRow);
+  const requestIds = result.rows.map((row) => row.id);
+  const offersByRequestId = await loadSwapVolunteerOffersByRequestIds(requestIds, client);
+
+  return result.rows.map((row) =>
+    formatSwapRequestRow(row, actor, offersByRequestId.get(row.id) ?? [])
+  );
 }
 
 async function listWeekShifts(req, res, next) {
@@ -825,7 +939,7 @@ async function createSwapRequest(req, res, next) {
 
     return res.status(201).json({
       message: 'Swap request created and published successfully.',
-      request: await loadFormattedSwapRequestById(requestId),
+      request: await loadFormattedSwapRequestById(requestId, req.actor),
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -833,6 +947,139 @@ async function createSwapRequest(req, res, next) {
     if (error.code === '23505') {
       return res.status(409).json({
         message: 'There is already an active swap request for this shift assignment.',
+      });
+    }
+
+    return next(error);
+  } finally {
+    client.release();
+  }
+}
+
+async function createSwapVolunteerOffer(req, res, next) {
+  const { requestId } = req.params;
+
+  if (!isValidUuid(requestId)) {
+    return res.status(400).json({
+      message: 'Swap request id must be a valid UUID.',
+    });
+  }
+
+  if (normalizeRole(req.actor.role) !== 'user') {
+    return res.status(403).json({
+      message: 'Only community users can volunteer to replace a shift.',
+    });
+  }
+
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const requestResult = await client.query(
+      `SELECT
+         ssr.*,
+         s.start_time AS shift_start_time,
+         s.status AS shift_status
+       FROM public.shift_swap_requests ssr
+       JOIN public.shifts s
+         ON s.id = ssr.shift_id
+       WHERE ssr.id = $1
+       FOR UPDATE`,
+      [requestId]
+    );
+
+    if (requestResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        message: 'Swap request not found.',
+      });
+    }
+
+    const swapRequest = requestResult.rows[0];
+
+    if (swapRequest.requester_user_id === req.actor.id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'You cannot volunteer for your own swap request.',
+      });
+    }
+
+    if (swapRequest.status !== 'approved') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'You can only volunteer for an active published swap request.',
+      });
+    }
+
+    if (
+      swapRequest.shift_status === 'cancelled' ||
+      swapRequest.shift_status === 'completed' ||
+      new Date(swapRequest.shift_start_time).getTime() <= Date.now()
+    ) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'This shift can no longer accept replacement volunteers.',
+      });
+    }
+
+    const existingOfferResult = await client.query(
+      `SELECT id
+       FROM public.shift_swap_request_volunteers
+       WHERE swap_request_id = $1
+         AND volunteer_user_id = $2
+         AND status IN ('pending', 'approved')
+       LIMIT 1`,
+      [requestId, req.actor.id]
+    );
+
+    if (existingOfferResult.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'You already volunteered for this swap request.',
+      });
+    }
+
+    const existingRegistrationResult = await client.query(
+      `SELECT id
+       FROM public.shift_registrations
+       WHERE shift_id = $1
+         AND user_id = $2
+         AND status IN ('pending', 'approved')
+       LIMIT 1`,
+      [swapRequest.shift_id, req.actor.id]
+    );
+
+    if (existingRegistrationResult.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'You are already assigned to this shift.',
+      });
+    }
+
+    await client.query(
+      `INSERT INTO public.shift_swap_request_volunteers (
+         id,
+         swap_request_id,
+         volunteer_user_id,
+         status
+       )
+       VALUES ($1, $2, $3, 'pending')`,
+      [randomUUID(), requestId, req.actor.id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({
+      message: 'Your replacement offer was sent to staff for review.',
+      request: await loadFormattedSwapRequestById(requestId, req.actor),
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+
+    if (error.code === '23505') {
+      return res.status(409).json({
+        message: 'You already volunteered for this swap request.',
       });
     }
 
@@ -1884,6 +2131,302 @@ async function updateRegistrationStatus(req, res, next, nextStatus) {
   }
 }
 
+async function updateSwapVolunteerOfferStatus(req, res, next) {
+  const { requestId, offerId } = req.params;
+  const { status, reviewNote } = req.body || {};
+  const normalizedStatus = typeof status === 'string' ? status.trim().toLowerCase() : '';
+  const normalizedReviewNote =
+    typeof reviewNote === 'string' && reviewNote.trim().length > 0
+      ? reviewNote.trim()
+      : null;
+
+  if (!isValidUuid(requestId) || !isValidUuid(offerId)) {
+    return res.status(400).json({
+      message: 'Swap request id and volunteer offer id must be valid UUIDs.',
+    });
+  }
+
+  if (!swapVolunteerOfferStatuses.has(normalizedStatus)) {
+    return res.status(400).json({
+      message: 'Invalid volunteer offer status.',
+    });
+  }
+
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const requestResult = await client.query(
+      `SELECT
+         ssr.*,
+         s.start_time AS shift_start_time,
+         s.status AS shift_status
+       FROM public.shift_swap_requests ssr
+       JOIN public.shifts s
+         ON s.id = ssr.shift_id
+       WHERE ssr.id = $1
+       FOR UPDATE`,
+      [requestId]
+    );
+
+    if (requestResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        message: 'Swap request not found.',
+      });
+    }
+
+    const swapRequest = requestResult.rows[0];
+    const isStaffActor = isStaffLike(req.actor.role);
+
+    const offerResult = await client.query(
+      `SELECT *
+       FROM public.shift_swap_request_volunteers
+       WHERE id = $1
+         AND swap_request_id = $2
+       FOR UPDATE`,
+      [offerId, requestId]
+    );
+
+    if (offerResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        message: 'Volunteer offer not found.',
+      });
+    }
+
+    const offer = offerResult.rows[0];
+    const isOfferOwner = offer.volunteer_user_id === req.actor.id;
+
+    if (normalizedStatus === 'cancelled') {
+      if (!isOfferOwner && !isStaffActor) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          message: 'You do not have permission to cancel this volunteer offer.',
+        });
+      }
+    } else if (!isStaffActor) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        message: 'Only staff users can review volunteer offers.',
+      });
+    }
+
+    if (offer.status === normalizedStatus) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: `Volunteer offer is already ${normalizedStatus}.`,
+      });
+    }
+
+    if (
+      ['rejected', 'cancelled'].includes(offer.status) &&
+      normalizedStatus !== 'cancelled'
+    ) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'This volunteer offer can no longer be changed.',
+      });
+    }
+
+    if (normalizedStatus === 'approved') {
+      if (swapRequest.status !== 'approved') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          message: 'Only active published swap requests can be approved.',
+        });
+      }
+
+      if (
+        swapRequest.shift_status === 'cancelled' ||
+        swapRequest.shift_status === 'completed' ||
+        new Date(swapRequest.shift_start_time).getTime() <= Date.now()
+      ) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          message: 'This shift can no longer be swapped.',
+        });
+      }
+
+      const requesterRegistrationResult = await client.query(
+        `SELECT *
+         FROM public.shift_registrations
+         WHERE id = $1
+         FOR UPDATE`,
+        [swapRequest.requester_registration_id]
+      );
+
+      if (requesterRegistrationResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({
+          message: 'Requester registration not found.',
+        });
+      }
+
+      const requesterRegistration = requesterRegistrationResult.rows[0];
+
+      if (requesterRegistration.status !== 'approved') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          message: 'The original assignment is no longer active.',
+        });
+      }
+
+      const volunteerRegistrationResult = await client.query(
+        `SELECT *
+         FROM public.shift_registrations
+         WHERE shift_id = $1
+           AND user_id = $2
+         ORDER BY created_at DESC
+         LIMIT 1
+         FOR UPDATE`,
+        [swapRequest.shift_id, offer.volunteer_user_id]
+      );
+
+      const volunteerRegistration = volunteerRegistrationResult.rows[0] ?? null;
+
+      if (
+        volunteerRegistration &&
+        ['pending', 'approved'].includes(volunteerRegistration.status)
+      ) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          message: 'This volunteer is already assigned to the shift.',
+        });
+      }
+
+      if (volunteerRegistration) {
+        await client.query(
+          `UPDATE public.shift_registrations
+           SET status = 'approved',
+               reviewed_at = NOW(),
+               reviewed_by_user_id = $2,
+               review_note = $3
+           WHERE id = $1`,
+          [
+            volunteerRegistration.id,
+            req.actor.id,
+            'Approved as a replacement volunteer by staff.',
+          ]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO public.shift_registrations (
+             id,
+             shift_id,
+             user_id,
+             status,
+             reviewed_at,
+             reviewed_by_user_id,
+             review_note
+           )
+           VALUES ($1, $2, $3, 'approved', NOW(), $4, $5)`,
+          [
+            randomUUID(),
+            swapRequest.shift_id,
+            offer.volunteer_user_id,
+            req.actor.id,
+            'Approved as a replacement volunteer by staff.',
+          ]
+        );
+      }
+
+      await client.query(
+        `UPDATE public.shift_registrations
+         SET status = 'cancelled',
+             reviewed_at = NOW(),
+             reviewed_by_user_id = $2,
+             review_note = $3
+         WHERE id = $1`,
+        [
+          requesterRegistration.id,
+          req.actor.id,
+          'Shift swap approved by staff.',
+        ]
+      );
+
+      await client.query(
+        `UPDATE public.shift_swap_request_volunteers
+         SET status = 'approved',
+             updated_at = NOW(),
+             reviewed_at = NOW(),
+             reviewed_by_user_id = $2,
+             review_note = $3
+         WHERE id = $1`,
+        [offerId, req.actor.id, normalizedReviewNote]
+      );
+
+      await client.query(
+        `UPDATE public.shift_swap_request_volunteers
+         SET status = 'rejected',
+             updated_at = NOW(),
+             reviewed_at = NOW(),
+             reviewed_by_user_id = $2,
+             review_note = 'Another volunteer was approved for this swap.'
+         WHERE swap_request_id = $1
+           AND id <> $3
+           AND status IN ('pending', 'approved')`,
+        [requestId, req.actor.id, offerId]
+      );
+
+      await client.query(
+        `UPDATE public.shift_swap_requests
+         SET status = 'closed',
+             updated_at = NOW(),
+             reviewed_at = NOW(),
+             reviewed_by_user_id = $2,
+             review_note = $3
+         WHERE id = $1`,
+        [requestId, req.actor.id, normalizedReviewNote]
+      );
+
+      await client.query('COMMIT');
+
+      return res.json({
+        message: 'Shift swap approved successfully.',
+        request: await loadFormattedSwapRequestById(requestId, req.actor),
+      });
+    }
+
+    await client.query(
+      `UPDATE public.shift_swap_request_volunteers
+       SET status = $1::public.shift_swap_volunteer_status,
+           updated_at = NOW(),
+           reviewed_at = CASE
+             WHEN $1::text = 'cancelled' AND $2 IS NULL THEN reviewed_at
+             ELSE NOW()
+           END,
+           reviewed_by_user_id = CASE
+             WHEN $1::text = 'cancelled' AND $2 IS NULL THEN reviewed_by_user_id
+             ELSE $2
+           END,
+           review_note = $3
+       WHERE id = $4`,
+      [
+        normalizedStatus,
+        normalizedStatus === 'cancelled' && isOfferOwner && !isStaffActor
+          ? null
+          : req.actor.id,
+        normalizedReviewNote,
+        offerId,
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json({
+      message: `Volunteer offer ${normalizedStatus} successfully.`,
+      request: await loadFormattedSwapRequestById(requestId, req.actor),
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    return next(error);
+  } finally {
+    client.release();
+  }
+}
+
 async function updateSwapRequestStatus(req, res, next) {
   const { requestId } = req.params;
   const { status, reviewNote } = req.body || {};
@@ -1997,11 +2540,28 @@ async function updateSwapRequestStatus(req, res, next) {
       ]
     );
 
+    if (['rejected', 'cancelled', 'closed'].includes(normalizedStatus)) {
+      await client.query(
+        `UPDATE public.shift_swap_request_volunteers
+         SET status = CASE
+               WHEN $2::text = 'cancelled' THEN 'cancelled'::public.shift_swap_volunteer_status
+               ELSE 'rejected'::public.shift_swap_volunteer_status
+             END,
+             updated_at = NOW(),
+             reviewed_at = NOW(),
+             reviewed_by_user_id = $1,
+             review_note = COALESCE(review_note, 'The swap request is no longer active.')
+         WHERE swap_request_id = $3
+           AND status IN ('pending', 'approved')`,
+        [req.actor.id, normalizedStatus, requestId]
+      );
+    }
+
     await client.query('COMMIT');
 
     return res.json({
       message: `Swap request ${normalizedStatus} successfully.`,
-      request: await loadFormattedSwapRequestById(requestId),
+      request: await loadFormattedSwapRequestById(requestId, req.actor),
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -2028,6 +2588,7 @@ module.exports = {
   cancelRegistration,
   confirmOwnRegistration,
   createSwapRequest,
+  createSwapVolunteerOffer,
   createShift,
   getShiftById,
   listShiftAssignmentPools,
@@ -2038,6 +2599,7 @@ module.exports = {
   registerForShift,
   rejectRegistration,
   requireActor,
+  updateSwapVolunteerOfferStatus,
   updateSwapRequestStatus,
   updateShift,
 };

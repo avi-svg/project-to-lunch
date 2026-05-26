@@ -6,6 +6,7 @@ import {
   ShiftSwapRequest,
   ShiftSwapRequestsResponse,
   ShiftRegistration,
+  UpdateShiftSwapVolunteerOfferPayload,
   UpdateShiftSwapRequestPayload,
   UpdateRegistrationPayload,
   UpdateShiftPayload,
@@ -264,6 +265,35 @@ export async function updateShiftSwapRequestForUser(
   return backendShiftsFetch<{ message: string; request: ShiftSwapRequest }>(
     userId,
     `/shifts/swap-requests/${requestId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function createShiftSwapVolunteerOfferForUser(
+  userId: string,
+  requestId: string,
+) {
+  return backendShiftsFetch<{ message: string; request: ShiftSwapRequest }>(
+    userId,
+    `/shifts/swap-requests/${requestId}/volunteers`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function updateShiftSwapVolunteerOfferForUser(
+  userId: string,
+  requestId: string,
+  offerId: string,
+  payload: UpdateShiftSwapVolunteerOfferPayload,
+) {
+  return backendShiftsFetch<{ message: string; request: ShiftSwapRequest }>(
+    userId,
+    `/shifts/swap-requests/${requestId}/volunteers/${offerId}`,
     {
       method: "PATCH",
       body: JSON.stringify(payload),

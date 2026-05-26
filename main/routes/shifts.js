@@ -12,6 +12,14 @@ router.patch(
   '/swap-requests/:requestId',
   shiftsController.updateSwapRequestStatus
 );
+router.post(
+  '/swap-requests/:requestId/volunteers',
+  shiftsController.createSwapVolunteerOffer
+);
+router.patch(
+  '/swap-requests/:requestId/volunteers/:offerId',
+  shiftsController.updateSwapVolunteerOfferStatus
+);
 router.get('/:id', shiftsController.getShiftById);
 router.get('/:id/assignment-pools', shiftsController.listShiftAssignmentPools);
 router.post('/:id/swap-requests', shiftsController.createSwapRequest);
