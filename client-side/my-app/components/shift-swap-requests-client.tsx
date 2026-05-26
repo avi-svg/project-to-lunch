@@ -328,6 +328,12 @@ export function ShiftSwapRequestsClient({
               נפתחה ב-{formatDateTime(request.createdAt)}
             </p>
 
+            {canVolunteer ? (
+              <p className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                הבקשה הזו פתוחה למתנדבים. אפשר להציע את עצמך כמחליף/ה והצוות יאשר את ההחלפה.
+              </p>
+            ) : null}
+
             {request.myVolunteerOffer ? (
               <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
                 ההצעה שלך: {formatOfferStatus(request.myVolunteerOffer.status)}
@@ -462,12 +468,12 @@ export function ShiftSwapRequestsClient({
         <div className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold text-stone-900">
-              {isStaffView ? "בקשות לטיפול צוות" : "לוח החלפות פעיל"}
+              {isStaffView ? "בקשות לטיפול צוות" : "בקשות החלפה פתוחות"}
             </h2>
             <p className="mt-1 text-sm text-stone-600">
               {isStaffView
                 ? "כאן הצוות רואה את סיבת הבקשה, את המועמדים להחלפה, ומאשר את ההחלפה בפועל."
-                : "כאן אפשר לראות בקשות פעילות של אחרים, להציע החלפה, ולעקוב גם אחרי ההצעות שכבר שלחת."}
+                : "כאן מופיעות בקשות של משתמשים אחרים שעדיין פתוחות להחלפה. מכל כרטיס אפשר להגיש התנדבות להחלפה ולעקוב אחרי ההצעה שלך."}
             </p>
           </div>
 
