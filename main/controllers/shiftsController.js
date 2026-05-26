@@ -46,7 +46,7 @@ const SHIFT_NOTIFICATION_WEEKDAY_FORMATTER = new Intl.DateTimeFormat('he-IL', {
 });
 const SHIFT_ASSIGNMENT_TEMPLATE_NAME =
   process.env.WHATSAPP_SHIFT_ASSIGNMENT_TEMPLATE_NAME ||
-  'shift_assignment_notification';
+  'shifts';
 const SHIFT_ASSIGNMENT_TEMPLATE_LANGUAGE_CODE =
   process.env.WHATSAPP_SHIFT_ASSIGNMENT_TEMPLATE_LANGUAGE_CODE || 'he';
 
@@ -367,11 +367,37 @@ async function sendShiftAssignmentNotifications(shift, users) {
 }
 
 function buildShiftAssignmentResponseMessage(notificationSummary) {
-  if (!notificationSummary || notificationSummary.sent === 0) {
+  if (!notificationSummary) {
     return 'Shift assignments updated successfully.';
   }
 
-  return `Shift assignments updated successfully. WhatsApp notifications sent to ${notificationSummary.sent} assigned user(s).`;
+  const messageParts = ['Shift assignments updated successfully.'];
+
+  if (notificationSummary.sent > 0) {
+    messageParts.push(
+      `WhatsApp notifications sent to ${notificationSummary.sent} assigned user(s).`
+    );
+  }
+
+  if (notificationSummary.failed > 0) {
+    messageParts.push(
+      `${notificationSummary.failed} WhatsApp notification(s) failed to send.`
+    );
+  }
+
+  if (notificationSummary.skippedNoPhone > 0) {
+    messageParts.push(
+      `${notificationSummary.skippedNoPhone} assigned user(s) were skipped because they do not have a phone number.`
+    );
+  }
+
+  if (notificationSummary.skippedInvalidPhone > 0) {
+    messageParts.push(
+      `${notificationSummary.skippedInvalidPhone} assigned user(s) were skipped because their phone number is invalid for WhatsApp.`
+    );
+  }
+
+  return messageParts.join(' ');
 }
 
 async function loadShiftById(shiftId, client = db) {
