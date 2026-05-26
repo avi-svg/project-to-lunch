@@ -18,18 +18,29 @@ function isTeamRole(role: string | undefined) {
   return role === "admin" || role === "staff";
 }
 
+function canManageUser(
+  actorUserId: string | undefined,
+  actorRole: string | undefined,
+  requestedUserId: string,
+) {
+  return Boolean(actorUserId) &&
+    (isTeamRole(actorRole) || actorUserId === requestedUserId);
+}
+
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ userId: string }> },
 ) {
   const session = await getServerSession(authOptions);
   const actorUserId = session?.user?.id;
+  const actorRole = session?.user?.role;
+  const { userId } = await context.params;
 
-  if (!actorUserId || !isTeamRole(session?.user?.role)) {
+  if (!canManageUser(actorUserId, actorRole, userId)) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
-  const { userId } = await context.params;
+  const safeActorUserId = actorUserId as string;
 
   try {
     const body = (await request.json()) as ManageUserPayload;
@@ -37,7 +48,14 @@ export async function PATCH(
     let user: BackendDirectoryUser | null = null;
 
     if (role !== undefined) {
-      user = await updateBackendUserRoleForActor(actorUserId, userId, role);
+      if (!isTeamRole(actorRole)) {
+        return NextResponse.json(
+          { message: "Only staff users can update roles." },
+          { status: 403 },
+        );
+      }
+
+      user = await updateBackendUserRoleForActor(safeActorUserId, userId, role);
     }
 
     const hasFieldUpdates = Object.values(updatePayload).some(
@@ -45,7 +63,11 @@ export async function PATCH(
     );
 
     if (hasFieldUpdates) {
-      user = await updateBackendUserForActor(actorUserId, userId, updatePayload);
+      user = await updateBackendUserForActor(
+        safeActorUserId,
+        userId,
+        updatePayload,
+      );
     }
 
     if (!user) {

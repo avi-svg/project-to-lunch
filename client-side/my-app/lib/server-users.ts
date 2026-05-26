@@ -275,6 +275,18 @@ export async function createBackendUserForActor(
   );
 }
 
+export async function fetchBackendUserForActor(
+  actorUserId: string,
+  userId: string,
+) {
+  const data = await backendUsersFetchForActor(actorUserId, `/users/${userId}`);
+
+  return extractUserFromPayload(
+    data,
+    "Backend get user response has an unexpected shape.",
+  );
+}
+
 export async function updateBackendUserForActor(
   actorUserId: string,
   userId: string,

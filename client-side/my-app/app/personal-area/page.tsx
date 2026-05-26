@@ -7,6 +7,10 @@ import {
   BackendShiftsError,
   fetchMyRegisteredShiftsForUser,
 } from "@/lib/server-shifts";
+import {
+  BackendUsersError,
+  fetchBackendUserForActor,
+} from "@/lib/server-users";
 import type { Shift } from "@/lib/shifts";
 
 export default async function PersonalAreaPage() {
@@ -19,6 +23,8 @@ export default async function PersonalAreaPage() {
   const isStaffUser = session.user.role === "staff";
   let registeredShifts: Shift[] = [];
   let shiftsErrorMessage = "";
+  let birthDate: string | null = null;
+  let profileErrorMessage = "";
 
   if (!isStaffUser) {
     try {
@@ -31,6 +37,16 @@ export default async function PersonalAreaPage() {
           ? error.message
           : "לא ניתן לטעון את התורנויות האישיות כרגע.";
     }
+  }
+
+  try {
+    const user = await fetchBackendUserForActor(session.user.id, session.user.id);
+    birthDate = user.birthDate ?? null;
+  } catch (error) {
+    profileErrorMessage =
+      error instanceof BackendUsersError
+        ? error.message
+        : "לא ניתן לטעון את הפרטים האישיים כרגע.";
   }
 
   return (
@@ -59,9 +75,11 @@ export default async function PersonalAreaPage() {
             name: session.user.name ?? "משתמש",
             email: session.user.email,
             role: session.user.role ?? "user",
+            birthDate,
           }}
           initialRegisteredShifts={registeredShifts}
           registeredShiftsError={shiftsErrorMessage}
+          initialProfileError={profileErrorMessage}
         />
       </div>
     </main>

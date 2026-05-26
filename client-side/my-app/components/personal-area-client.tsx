@@ -1,6 +1,12 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import {
+  type FormEvent,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import {
   STAFF_SHIFT_SETTINGS_STORAGE_KEY,
   STAFF_ZONE_STORAGE_KEY,
@@ -27,9 +33,11 @@ type Props = {
     name: string;
     email: string;
     role: UserRole;
+    birthDate?: string | null;
   };
   initialRegisteredShifts: Shift[];
   registeredShiftsError: string;
+  initialProfileError: string;
 };
 
 type StaffCreateMeetingForm = {
@@ -126,10 +134,31 @@ function formatShiftRegistrationStatus(status: ShiftRegistrationStatus) {
   return "ממתין לאישור שלך";
 }
 
+async function parseResponse(response: Response) {
+  const contentType = response.headers.get("content-type") ?? "";
+  const isJson = contentType.includes("application/json");
+  const data = isJson ? await response.json() : await response.text();
+
+  if (!response.ok) {
+    const message =
+      typeof data === "object" &&
+      data !== null &&
+      "message" in data &&
+      typeof data.message === "string"
+        ? data.message
+        : "שמירת הפרטים נכשלה.";
+
+    throw new Error(message);
+  }
+
+  return data;
+}
+
 export function PersonalAreaClient({
   currentUser,
   initialRegisteredShifts,
   registeredShiftsError,
+  initialProfileError,
 }: Props) {
   const isHydrated = useSyncExternalStore(
     () => () => {},
@@ -155,6 +184,10 @@ export function PersonalAreaClient({
   const [confirmingRegistrationId, setConfirmingRegistrationId] = useState<
     string | null
   >(null);
+  const [birthDate, setBirthDate] = useState(currentUser.birthDate ?? "");
+  const [profileMessage, setProfileMessage] = useState("");
+  const [profileError, setProfileError] = useState(initialProfileError);
+  const [isProfilePending, startProfileTransition] = useTransition();
 
   const isStaffView = currentUser.role === "staff" || currentUser.role === "admin";
   const assignedStaff = useMemo(
@@ -305,6 +338,38 @@ export function PersonalAreaClient({
     }
   }
 
+  function handleProfileSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setProfileMessage("");
+    setProfileError("");
+
+    startProfileTransition(async () => {
+      try {
+        const result = await parseResponse(
+          await fetch(`/api/users/${currentUser.id}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              birthDate: birthDate || null,
+            }),
+          }),
+        );
+
+        const nextBirthDate =
+          typeof result?.user?.birthDate === "string" ? result.user.birthDate : "";
+
+        setBirthDate(nextBirthDate);
+        setProfileMessage("תאריך יום ההולדת עודכן.");
+      } catch (error) {
+        setProfileError(
+          error instanceof Error ? error.message : "לא ניתן לשמור את תאריך יום ההולדת.",
+        );
+      }
+    });
+  }
+
   if (!isHydrated) {
     return (
       <div className="space-y-8">
@@ -341,6 +406,72 @@ export function PersonalAreaClient({
               : "כאן אפשר לעקוב אחרי בקשות הפגישה ששלחת לאנשי הצוות."}
           </p>
         </div>
+      </section>
+
+      <section className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
+              הפרטים שלי
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold text-stone-900">
+              עדכון יום הולדת
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-600">
+              אפשר לעדכן כאן את תאריך יום ההולדת כדי לשמור אותו בפרופיל האישי.
+            </p>
+          </div>
+
+          <div className="rounded-3xl bg-stone-50 px-5 py-4 text-sm text-stone-600">
+            <p className="font-medium text-stone-900">{currentUser.name}</p>
+            <p>{currentUser.email}</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleProfileSave} className="mt-6 space-y-4">
+          <div className="grid gap-4 md:grid-cols-[minmax(0,22rem)_auto_auto] md:items-end">
+            <label className="space-y-2">
+              <span className="block text-sm font-medium text-stone-700">
+                תאריך יום הולדת
+              </span>
+              <input
+                type="date"
+                value={birthDate}
+                onChange={(event) => setBirthDate(event.target.value)}
+                className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setBirthDate("")}
+              disabled={isProfilePending || birthDate.length === 0}
+              className="rounded-2xl border border-stone-300 bg-white px-5 py-3 text-sm font-medium text-stone-900 transition hover:border-stone-900 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400"
+            >
+              נקה תאריך
+            </button>
+
+            <button
+              type="submit"
+              disabled={isProfilePending}
+              className="rounded-2xl bg-stone-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-400"
+            >
+              {isProfilePending ? "שומר..." : "שמור"}
+            </button>
+          </div>
+
+          {profileError ? (
+            <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              {profileError}
+            </p>
+          ) : null}
+
+          {profileMessage ? (
+            <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              {profileMessage}
+            </p>
+          ) : null}
+        </form>
       </section>
 
       {isStaffView ? (
