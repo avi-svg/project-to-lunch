@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import type { Shift, ShiftRegistration, ShiftRegistrationStatus } from "@/lib/shifts";
+import { useMemo } from "react";
+import type { Shift, ShiftRegistrationStatus } from "@/lib/shifts";
 
 type Props = {
   shift: Shift;
@@ -12,7 +12,7 @@ function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("he-IL", {
     weekday: "short",
     day: "2-digit",
-    month: "short",
+    month: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
@@ -91,8 +91,6 @@ function getRegistrationTone(status: ShiftRegistrationStatus) {
 }
 
 export function ManageShiftDetailClient({ shift }: Props) {
-  const [placeholderMessage, setPlaceholderMessage] = useState<string | null>(null);
-
   const activeRegistrations = useMemo(
     () =>
       (shift.registrations ?? []).filter(
@@ -114,12 +112,6 @@ export function ManageShiftDetailClient({ shift }: Props) {
   const hasPendingAssignments = activeRegistrations.some(
     (registration) => registration.status === "pending",
   );
-
-  function handleFutureSwapRequest(registration: ShiftRegistration) {
-    setPlaceholderMessage(
-      `בקשת החלפה עבור ${registration.user.name ?? registration.user.email} תתווסף בהמשך. כרגע הכפתור משמש כהכנה למסך העתידי.`,
-    );
-  }
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_24rem]">
@@ -177,7 +169,7 @@ export function ManageShiftDetailClient({ shift }: Props) {
                   שיבוצים בהמתנה
                 </p>
                 <h2 className="mt-2 text-2xl font-semibold text-amber-950">
-                  יש משתמשים עם סטטוס PENDING
+                  יש משתמשים עם סטטוס `pending`
                 </h2>
                 <p className="mt-2 text-sm leading-7 text-amber-900">
                   אם צריך לעדכן את השיבוץ, אפשר לעבור למסך השיבוצים ולבצע שם שינוי
@@ -192,12 +184,6 @@ export function ManageShiftDetailClient({ shift }: Props) {
                 מעבר למסך השיבוצים
               </Link>
             </div>
-          </section>
-        ) : null}
-
-        {placeholderMessage ? (
-          <section className="rounded-[2rem] border border-sky-200 bg-sky-50 p-5 text-sm text-sky-900 shadow-sm">
-            {placeholderMessage}
           </section>
         ) : null}
 
@@ -263,16 +249,6 @@ export function ManageShiftDetailClient({ shift }: Props) {
                       >
                         עדכון דרך מסך השיבוצים
                       </Link>
-                    ) : null}
-
-                    {registration.status === "approved" ? (
-                      <button
-                        type="button"
-                        onClick={() => handleFutureSwapRequest(registration)}
-                        className="inline-flex rounded-2xl border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-900 transition hover:border-stone-900"
-                      >
-                        יצירת בקשת החלפה
-                      </button>
                     ) : null}
                   </div>
                 </article>
