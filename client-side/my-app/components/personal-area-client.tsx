@@ -388,7 +388,9 @@ export function PersonalAreaClient({
       setSwapRequests((current) => [result.request, ...current]);
       setSwapReasonDraft("");
       setOpenSwapShiftId(null);
-      setShiftActionMessage("בקשת ההחלפה נשלחה לעיון איש צוות ונוספה ללוח הבקשות.");
+      setShiftActionMessage(
+        "בקשת ההחלפה פורסמה אוטומטית ונשלחה לידיעת הצוות ושאר המשתמשים.",
+      );
     } catch (error) {
       setSwapRequestError(
         error instanceof Error ? error.message : "לא ניתן ליצור בקשת החלפה כרגע.",

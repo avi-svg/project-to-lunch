@@ -31,7 +31,7 @@ function formatDateTime(value: string) {
 
 function formatSwapStatus(status: ShiftSwapRequestStatus) {
   if (status === "approved") {
-    return "אושרה לעיון הצוות";
+    return "פורסמה";
   }
 
   if (status === "rejected") {
@@ -270,7 +270,7 @@ export function ShiftSwapRequestsClient({
             </h2>
             <p className="mt-1 text-sm text-stone-600">
               {isStaffView
-                ? "כאן הצוות מאשר, דוחה או סוגר בקשות החלפה פתוחות."
+                ? "כאן הצוות יכול לדחות או לסגור בקשות החלפה שכבר פורסמו."
                 : "כאן מוצגות הבקשות הפעילות כדי שכל המשתמשים יוכלו לדעת על צורך בהחלפה."}
             </p>
           </div>

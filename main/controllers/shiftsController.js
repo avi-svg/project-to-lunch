@@ -817,14 +817,14 @@ async function createSwapRequest(req, res, next) {
          reason,
          status
        )
-       VALUES ($1, $2, $3, $4, $5, 'pending')`,
+       VALUES ($1, $2, $3, $4, $5, 'approved')`,
       [requestId, id, req.actor.id, registration.id, normalizedReason]
     );
 
     await client.query('COMMIT');
 
     return res.status(201).json({
-      message: 'Swap request created successfully.',
+      message: 'Swap request created and published successfully.',
       request: await loadFormattedSwapRequestById(requestId),
     });
   } catch (error) {
