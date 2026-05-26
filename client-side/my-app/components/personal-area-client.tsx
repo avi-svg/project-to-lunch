@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
   useTransition,
 } from "react";
+import { ShiftSwapRequestsClient } from "@/components/shift-swap-requests-client";
 import {
   STAFF_SHIFT_SETTINGS_STORAGE_KEY,
   STAFF_ZONE_STORAGE_KEY,
@@ -22,8 +23,10 @@ import {
 } from "@/lib/staff-zone";
 import {
   confirmShiftRegistration,
+  createShiftSwapRequest,
   type Shift,
   type ShiftRegistrationStatus,
+  type ShiftSwapRequest,
   type UserRole,
 } from "@/lib/shifts";
 
@@ -37,6 +40,8 @@ type Props = {
   };
   initialRegisteredShifts: Shift[];
   registeredShiftsError: string;
+  initialSwapRequests: ShiftSwapRequest[];
+  swapRequestsError: string;
   initialProfileError: string;
 };
 
@@ -98,7 +103,7 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatStatus(status: MeetingRequest["status"]) {
+function formatMeetingStatus(status: MeetingRequest["status"]) {
   if (status === "approved") {
     return "מאושר";
   }
@@ -158,6 +163,8 @@ export function PersonalAreaClient({
   currentUser,
   initialRegisteredShifts,
   registeredShiftsError,
+  initialSwapRequests,
+  swapRequestsError,
   initialProfileError,
 }: Props) {
   const isHydrated = useSyncExternalStore(
@@ -181,12 +188,21 @@ export function PersonalAreaClient({
   );
   const [shiftActionMessage, setShiftActionMessage] = useState("");
   const [shiftActionError, setShiftActionError] = useState(registeredShiftsError);
+  const [swapRequests, setSwapRequests] = useState<ShiftSwapRequest[]>(
+    initialSwapRequests,
+  );
+  const [swapRequestError, setSwapRequestError] = useState(swapRequestsError);
   const [confirmingRegistrationId, setConfirmingRegistrationId] = useState<
     string | null
   >(null);
   const [birthDate, setBirthDate] = useState(currentUser.birthDate ?? "");
   const [profileMessage, setProfileMessage] = useState("");
   const [profileError, setProfileError] = useState(initialProfileError);
+  const [openSwapShiftId, setOpenSwapShiftId] = useState<string | null>(null);
+  const [swapReasonDraft, setSwapReasonDraft] = useState("");
+  const [creatingSwapShiftId, setCreatingSwapShiftId] = useState<string | null>(
+    null,
+  );
   const [isProfilePending, startProfileTransition] = useTransition();
 
   const isStaffView = currentUser.role === "staff" || currentUser.role === "admin";
@@ -234,6 +250,20 @@ export function PersonalAreaClient({
       (slot) => !blockedStartTimes.has(slot.startTime),
     );
   }, [assignedStaff, meetingRequests, shiftSettings]);
+
+  const activeSwapRequestsByShiftId = useMemo(
+    () =>
+      new Map(
+        swapRequests
+          .filter(
+            (request) =>
+              request.requesterUserId === currentUser.id &&
+              (request.status === "pending" || request.status === "approved"),
+          )
+          .map((request) => [request.shiftId, request]),
+      ),
+    [currentUser.id, swapRequests],
+  );
 
   function updateRequestStatus(requestId: string, status: MeetingRequest["status"]) {
     const nextRequests = meetingRequests.map((request) =>
@@ -328,13 +358,43 @@ export function PersonalAreaClient({
           };
         }),
       );
-      setShiftActionMessage("התורנות אושרה ונשמרה לך כשריון מלא.");
+      setShiftActionMessage("התורנות אושרה ונשמרה לך כשיבוץ מלא.");
     } catch (error) {
       setShiftActionError(
         error instanceof Error ? error.message : "לא ניתן לאשר את התורנות כרגע.",
       );
     } finally {
       setConfirmingRegistrationId(null);
+    }
+  }
+
+  async function handleCreateSwapRequest(shiftId: string) {
+    const normalizedReason = swapReasonDraft.trim();
+
+    if (!normalizedReason) {
+      setSwapRequestError("צריך לכתוב סיבה קצרה כדי ליצור בקשת החלפה.");
+      return;
+    }
+
+    setShiftActionMessage("");
+    setShiftActionError("");
+    setSwapRequestError("");
+    setCreatingSwapShiftId(shiftId);
+
+    try {
+      const result = await createShiftSwapRequest(shiftId, {
+        reason: normalizedReason,
+      });
+      setSwapRequests((current) => [result.request, ...current]);
+      setSwapReasonDraft("");
+      setOpenSwapShiftId(null);
+      setShiftActionMessage("בקשת ההחלפה נשלחה לעיון איש צוות ונוספה ללוח הבקשות.");
+    } catch (error) {
+      setSwapRequestError(
+        error instanceof Error ? error.message : "לא ניתן ליצור בקשת החלפה כרגע.",
+      );
+    } finally {
+      setCreatingSwapShiftId(null);
     }
   }
 
@@ -364,7 +424,9 @@ export function PersonalAreaClient({
         setProfileMessage("תאריך יום ההולדת עודכן.");
       } catch (error) {
         setProfileError(
-          error instanceof Error ? error.message : "לא ניתן לשמור את תאריך יום ההולדת.",
+          error instanceof Error
+            ? error.message
+            : "לא ניתן לשמור את תאריך יום ההולדת.",
         );
       }
     });
@@ -403,7 +465,7 @@ export function PersonalAreaClient({
           <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
             {isStaffView
               ? "כאן מרוכזות בקשות הפגישה שמחכות לטיפול של אנשי הצוות, יחד עם אפשרות ליזום פגישה לפי שעות העבודה שהוגדרו."
-              : "כאן אפשר לעקוב אחרי בקשות הפגישה ששלחת לאנשי הצוות."}
+              : "כאן אפשר לעקוב אחרי התורנויות האישיות, לפתוח בקשות החלפה ולראות את סטטוס הבקשות שלך."}
           </p>
         </div>
       </section>
@@ -499,7 +561,9 @@ export function PersonalAreaClient({
           ) : (
             <div className="mt-6 grid gap-4 lg:grid-cols-2">
               <label className="block space-y-2">
-                <span className="text-sm font-medium text-stone-700">משתמש קהילה</span>
+                <span className="text-sm font-medium text-stone-700">
+                  משתמש קהילה
+                </span>
                 <select
                   value={staffCreateForm.communityMemberId}
                   onChange={(event) =>
@@ -596,107 +660,196 @@ export function PersonalAreaClient({
       ) : null}
 
       {!isStaffView ? (
-        <section className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
-              תורנויות
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold text-stone-900">
-              {registeredShifts.length === 0 ? "אין לך תורנויות כרגע" : "התורנויות שלי"}
-            </h2>
-          </div>
-          <span className="rounded-full bg-stone-100 px-4 py-2 text-sm text-stone-700">
-            {registeredShifts.length} תורנויות
-          </span>
-        </div>
-
-        {shiftActionMessage ? (
-          <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {shiftActionMessage}
-          </p>
-        ) : null}
-
-        {shiftActionError ? (
-          <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {shiftActionError}
-          </p>
-        ) : null}
-
-        <div className="mt-6 space-y-4">
-          {registeredShifts.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-600">
-              ברגע שישבצו אותך לתורנות, היא תופיע כאן עם אפשרות לאשר השתתפות.
+        <>
+          <section className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
+                  תורנויות
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold text-stone-900">
+                  {registeredShifts.length === 0
+                    ? "אין לך תורנויות כרגע"
+                    : "התורנויות שלי"}
+                </h2>
+              </div>
+              <span className="rounded-full bg-stone-100 px-4 py-2 text-sm text-stone-700">
+                {registeredShifts.length} תורנויות
+              </span>
             </div>
-          ) : (
-            registeredShifts.map((shift) => {
-              const myRegistration = shift.myRegistration;
 
-              if (!myRegistration) {
-                return null;
-              }
+            {shiftActionMessage ? (
+              <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                {shiftActionMessage}
+              </p>
+            ) : null}
 
-              return (
-                <article
-                  key={shift.id}
-                  className={`rounded-3xl border p-5 ${
-                    myRegistration.status === "approved"
-                      ? "border-emerald-200 bg-emerald-50"
-                      : "border-stone-200 bg-stone-50"
-                  }`}
-                >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-2">
-                      <p className="text-lg font-semibold text-stone-900">{shift.title}</p>
-                      <p className="text-sm text-stone-600">
-                        התחלה: {formatDateTime(shift.startTime)}
-                      </p>
-                      <p className="text-sm text-stone-600">
-                        סיום: {formatDateTime(shift.endTime)}
-                      </p>
-                      {shift.location ? (
-                        <p className="text-sm text-stone-600">מיקום: {shift.location}</p>
-                      ) : null}
-                      {shift.description ? (
-                        <p className="text-sm leading-6 text-stone-700">
-                          {shift.description}
-                        </p>
-                      ) : null}
-                    </div>
+            {shiftActionError ? (
+              <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {shiftActionError}
+              </p>
+            ) : null}
 
-                    <div className="space-y-3 lg:min-w-56">
-                      <span className="inline-flex rounded-full bg-stone-900 px-3 py-1 text-xs font-semibold text-white">
-                        {formatShiftRegistrationStatus(myRegistration.status)}
-                      </span>
+            {swapRequestError ? (
+              <p className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {swapRequestError}
+              </p>
+            ) : null}
 
-                      {myRegistration.status === "pending" ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleConfirmShift(shift.id, myRegistration.id)
-                          }
-                          disabled={confirmingRegistrationId === myRegistration.id}
-                          className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                        >
-                          {confirmingRegistrationId === myRegistration.id
-                            ? "מאשר..."
-                            : "אישור לתורנות"}
-                        </button>
-                      ) : (
-                        <p className="text-sm text-stone-600">
-                          {myRegistration.status === "approved"
-                            ? "התורנות שמורה עבורך באופן מלא."
-                            : "סטטוס התורנות עודכן על ידי הצוות."}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </article>
-              );
-            })
-          )}
-        </div>
-        </section>
+            <div className="mt-6 space-y-4">
+              {registeredShifts.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-600">
+                  ברגע שישבצו אותך לתורנויות, הן יופיעו כאן עם אפשרות לאישור
+                  השתתפות או פתיחת בקשת החלפה.
+                </div>
+              ) : (
+                registeredShifts.map((shift) => {
+                  const myRegistration = shift.myRegistration;
+                  const activeSwapRequest = activeSwapRequestsByShiftId.get(shift.id);
+                  const isSwapFormOpen = openSwapShiftId === shift.id;
+
+                  if (!myRegistration) {
+                    return null;
+                  }
+
+                  return (
+                    <article
+                      key={shift.id}
+                      className={`rounded-3xl border p-5 ${
+                        myRegistration.status === "approved"
+                          ? "border-emerald-200 bg-emerald-50"
+                          : "border-stone-200 bg-stone-50"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="space-y-2">
+                          <p className="text-lg font-semibold text-stone-900">
+                            {shift.title}
+                          </p>
+                          <p className="text-sm text-stone-600">
+                            התחלה: {formatDateTime(shift.startTime)}
+                          </p>
+                          <p className="text-sm text-stone-600">
+                            סיום: {formatDateTime(shift.endTime)}
+                          </p>
+                          {shift.location ? (
+                            <p className="text-sm text-stone-600">
+                              מיקום: {shift.location}
+                            </p>
+                          ) : null}
+                          {shift.description ? (
+                            <p className="text-sm leading-6 text-stone-700">
+                              {shift.description}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="space-y-3 lg:min-w-72">
+                          <span className="inline-flex rounded-full bg-stone-900 px-3 py-1 text-xs font-semibold text-white">
+                            {formatShiftRegistrationStatus(myRegistration.status)}
+                          </span>
+
+                          {activeSwapRequest ? (
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                              כבר קיימת בקשת החלפה פעילה לתורנות הזו.
+                            </div>
+                          ) : null}
+
+                          {myRegistration.status === "pending" ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleConfirmShift(shift.id, myRegistration.id)
+                              }
+                              disabled={confirmingRegistrationId === myRegistration.id}
+                              className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                            >
+                              {confirmingRegistrationId === myRegistration.id
+                                ? "מאשר..."
+                                : "אישור לתורנות"}
+                            </button>
+                          ) : (
+                            <div className="space-y-3">
+                              <p className="text-sm text-stone-600">
+                                {myRegistration.status === "approved"
+                                  ? "התורנות שמורה עבורך באופן מלא."
+                                  : "סטטוס התורנות עודכן על ידי הצוות."}
+                              </p>
+
+                              {myRegistration.status === "approved" &&
+                              !activeSwapRequest ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setOpenSwapShiftId((current) =>
+                                        current === shift.id ? null : shift.id,
+                                      )
+                                    }
+                                    className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-medium text-stone-900 transition hover:border-stone-900"
+                                  >
+                                    {isSwapFormOpen
+                                      ? "סגירת טופס ההחלפה"
+                                      : "יצירת בקשת החלפה"}
+                                  </button>
+
+                                  {isSwapFormOpen ? (
+                                    <div className="space-y-3 rounded-2xl border border-stone-200 bg-white p-4">
+                                      <label className="block space-y-2">
+                                        <span className="text-sm font-medium text-stone-700">
+                                          למה צריך החלפה?
+                                        </span>
+                                        <textarea
+                                          value={swapReasonDraft}
+                                          onChange={(event) =>
+                                            setSwapReasonDraft(event.target.value)
+                                          }
+                                          className="min-h-28 w-full rounded-2xl border border-stone-300 px-4 py-3 outline-none transition focus:border-stone-900"
+                                          placeholder="למשל: יש לי אילוץ אישי באותו ערב, לא אוכל להגיע ומחפש/ת מחליף/ה."
+                                        />
+                                      </label>
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleCreateSwapRequest(shift.id)
+                                        }
+                                        disabled={
+                                          creatingSwapShiftId === shift.id ||
+                                          swapReasonDraft.trim().length === 0
+                                        }
+                                        className="w-full rounded-2xl bg-stone-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-400"
+                                      >
+                                        {creatingSwapShiftId === shift.id
+                                          ? "שולח..."
+                                          : "שליחת בקשת החלפה"}
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })
+              )}
+            </div>
+          </section>
+
+          <ShiftSwapRequestsClient
+            currentUserId={currentUser.id}
+            currentUserRole={currentUser.role}
+            initialRequests={swapRequests}
+            requests={swapRequests}
+            onRequestsChange={setSwapRequests}
+            initialError={swapRequestsError}
+            heading="בקשות החלפה"
+            description="כאן אפשר לעקוב אחרי בקשות ההחלפה שלך ולראות את הבקשות הפעילות שמופיעות לידיעת שאר המשתמשים."
+          />
+        </>
       ) : null}
 
       <section className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm">
@@ -749,7 +902,7 @@ export function PersonalAreaClient({
 
                     <div className="space-y-3">
                       <span className="inline-flex rounded-full bg-stone-900 px-3 py-1 text-xs font-semibold text-white">
-                        {formatStatus(request.status)}
+                        {formatMeetingStatus(request.status)}
                       </span>
 
                       {isStaffView && request.status === "pending" ? (

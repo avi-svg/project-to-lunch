@@ -1,0 +1,41 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/auth";
+import {
+  BackendShiftsError,
+  updateShiftSwapRequestForUser,
+} from "@/lib/server-shifts";
+
+type RouteContext = {
+  params: Promise<{
+    requestId: string;
+  }>;
+};
+
+export async function PATCH(request: Request, context: RouteContext) {
+  const session = await getServerSession(authOptions);
+  const userId = session?.user?.id;
+
+  if (!userId) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { requestId } = await context.params;
+    const result = await updateShiftSwapRequestForUser(userId, requestId, body);
+    return NextResponse.json(result);
+  } catch (error) {
+    if (error instanceof BackendShiftsError) {
+      return NextResponse.json(
+        { message: error.message },
+        { status: error.status },
+      );
+    }
+
+    return NextResponse.json(
+      { message: "Unable to update swap request." },
+      { status: 500 },
+    );
+  }
+}

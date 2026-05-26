@@ -6,12 +6,13 @@ import { PersonalAreaClient } from "@/components/personal-area-client";
 import {
   BackendShiftsError,
   fetchMyRegisteredShiftsForUser,
+  fetchShiftSwapRequestsForUser,
 } from "@/lib/server-shifts";
 import {
   BackendUsersError,
   fetchBackendUserForActor,
 } from "@/lib/server-users";
-import type { Shift } from "@/lib/shifts";
+import type { Shift, ShiftSwapRequest } from "@/lib/shifts";
 
 export default async function PersonalAreaPage() {
   const session = await getServerSession(authOptions);
@@ -20,9 +21,12 @@ export default async function PersonalAreaPage() {
     redirect("/");
   }
 
-  const isStaffUser = session.user.role === "staff";
+  const isStaffUser =
+    session.user.role === "staff" || session.user.role === "admin";
   let registeredShifts: Shift[] = [];
+  let swapRequests: ShiftSwapRequest[] = [];
   let shiftsErrorMessage = "";
+  let swapRequestsErrorMessage = "";
   let birthDate: string | null = null;
   let profileErrorMessage = "";
 
@@ -36,6 +40,15 @@ export default async function PersonalAreaPage() {
         error instanceof BackendShiftsError
           ? error.message
           : "לא ניתן לטעון את התורנויות האישיות כרגע.";
+    }
+
+    try {
+      swapRequests = (await fetchShiftSwapRequestsForUser(session.user.id)).requests;
+    } catch (error) {
+      swapRequestsErrorMessage =
+        error instanceof BackendShiftsError
+          ? error.message
+          : "לא ניתן לטעון את בקשות ההחלפה כרגע.";
     }
   }
 
@@ -79,6 +92,8 @@ export default async function PersonalAreaPage() {
           }}
           initialRegisteredShifts={registeredShifts}
           registeredShiftsError={shiftsErrorMessage}
+          initialSwapRequests={swapRequests}
+          swapRequestsError={swapRequestsErrorMessage}
           initialProfileError={profileErrorMessage}
         />
       </div>

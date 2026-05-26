@@ -16,6 +16,15 @@ type NavigationLink = {
   teamOnly?: boolean;
 };
 
+type QuickAction = {
+  href: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  accent: string;
+  staffOnly?: boolean;
+};
+
 const navigationLinks: readonly NavigationLink[] = [
   { href: "/main-schedule", label: "לוח זמנים ראשי" },
   { href: "/birthdays", label: "ימי הולדת" },
@@ -23,14 +32,49 @@ const navigationLinks: readonly NavigationLink[] = [
   { href: "/staff-shifts", label: "אזור משמרות צוות", staffOnly: true },
   { href: "/staff-zone", label: "אזור צוות", staffOnly: true },
   { href: "/personal-area", label: "אזור אישי" },
+  { href: "/shift-swap-requests", label: "בקשות החלפה" },
   { href: "/manage-users", label: "ניהול משתמשים", teamOnly: true },
+];
+
+const quickActions: readonly QuickAction[] = [
+  {
+    href: "/personal-area",
+    eyebrow: "מעקב אישי",
+    title: "התורנויות שלי",
+    description:
+      "כניסה מהירה לאזור האישי כדי לאשר תורנות, לעדכן פרטים ולפתוח בקשת החלפה במקרה הצורך.",
+    accent: "from-stone-900 via-stone-800 to-stone-700",
+  },
+  {
+    href: "/shift-swap-requests",
+    eyebrow: "בקשות החלפה",
+    title: "לוח ניהול החלפות",
+    description:
+      "מסך ייעודי לבקשות החלפה: המשתמשים רואים את הבקשות הפעילות והצוות יכול לאשר, לדחות או לסגור טיפול.",
+    accent: "from-amber-700 via-orange-600 to-rose-500",
+  },
+  {
+    href: "/manage-shifts",
+    eyebrow: "צוות",
+    title: "ניהול תורנויות",
+    description:
+      "לצוות: יצירה, ניהול ושיבוץ תורנויות ופעילויות מתוך מסכי הניהול הייעודיים.",
+    accent: "from-emerald-700 via-emerald-600 to-lime-500",
+    staffOnly: true,
+  },
 ];
 
 function getNavigationLinks(userRole: UserRole) {
   return navigationLinks.filter(
     (link) =>
-      (!link.staffOnly || userRole === "staff") &&
+      (!link.staffOnly || userRole === "staff" || userRole === "admin") &&
       (!link.teamOnly || userRole === "admin" || userRole === "staff"),
+  );
+}
+
+function getQuickActions(userRole: UserRole) {
+  return quickActions.filter(
+    (action) => !action.staffOnly || userRole === "staff" || userRole === "admin",
   );
 }
 
@@ -87,18 +131,48 @@ export function DashboardClient({ userName, userRole }: Props) {
           </section>
         </aside>
 
-        <section className="flex min-h-[24rem] items-center justify-center rounded-[2rem] border border-dashed border-stone-300 bg-white/70 p-10 text-center shadow-sm">
-          <div className="max-w-xl space-y-3">
-            <p className="text-sm font-semibold tracking-[0.25em] text-stone-500">
-              בחירת אזור
-            </p>
-            <h2 className="text-3xl font-semibold text-stone-900">
-              בחר אזור עבודה מהתפריט הצדדי
-            </h2>
-            <p className="text-sm leading-7 text-stone-600">
-              זהו מסך ניווט מרכזי שממנו אפשר להמשיך לכל אחד מהאזורים הפעילים
-              במערכת.
-            </p>
+        <section className="space-y-6">
+          <section className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
+            <div className="bg-[linear-gradient(145deg,#1c1917,#44403c)] px-8 py-10 text-white">
+              <p className="text-sm font-semibold tracking-[0.25em] text-stone-300">
+                מרכז עבודה
+              </p>
+              <h2 className="mt-3 text-4xl font-semibold tracking-tight">
+                כל המסלולים המרכזיים במקום אחד
+              </h2>
+              <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
+                הוספנו גם אזור ייעודי לבקשות החלפה, כך שאפשר לפתוח בקשה מהאזור
+                האישי ולנהל אותה ממסך מרכזי בדשבורד.
+              </p>
+            </div>
+          </section>
+
+          <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+            {getQuickActions(userRole).map((action) => (
+              <Link
+                key={action.href}
+                href={action.href}
+                className="group overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-stone-400 hover:shadow-lg"
+              >
+                <div className={`bg-gradient-to-br ${action.accent} px-6 py-6 text-white`}>
+                  <p className="text-sm font-semibold tracking-[0.2em] text-white/80">
+                    {action.eyebrow}
+                  </p>
+                  <h3 className="mt-3 text-3xl font-semibold tracking-tight">
+                    {action.title}
+                  </h3>
+                </div>
+
+                <div className="space-y-5 px-6 py-6">
+                  <p className="text-sm leading-7 text-stone-600">
+                    {action.description}
+                  </p>
+                  <span className="inline-flex rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-900 transition group-hover:border-stone-900">
+                    כניסה לאזור
+                  </span>
+                </div>
+              </Link>
+            ))}
           </div>
         </section>
       </div>

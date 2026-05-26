@@ -7,6 +7,12 @@ export type ShiftRegistrationStatus =
   | "approved"
   | "rejected"
   | "cancelled";
+export type ShiftSwapRequestStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "cancelled"
+  | "closed";
 
 export type ShiftAssignmentPoolUser = {
   id: string;
@@ -73,6 +79,31 @@ export type Shift = {
   registrations?: ShiftRegistration[];
 };
 
+export type ShiftSwapRequest = {
+  id: string;
+  shiftId: string;
+  requesterUserId: string;
+  requesterRegistrationId: string;
+  status: ShiftSwapRequestStatus;
+  reason: string;
+  createdAt: string;
+  updatedAt: string;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  requesterRegistrationStatus: ShiftRegistrationStatus;
+  requester: ShiftActor;
+  reviewedBy: Omit<ShiftActor, "role"> | null;
+  shift: {
+    id: string;
+    title: string;
+    description: string | null;
+    location: string | null;
+    startTime: string;
+    endTime: string;
+    status: ShiftStatus;
+  };
+};
+
 export type WeekShiftsResponse = {
   weekStart: string;
   weekEnd: string;
@@ -81,6 +112,10 @@ export type WeekShiftsResponse = {
 
 export type MyRegisteredShiftsResponse = {
   shifts: Shift[];
+};
+
+export type ShiftSwapRequestsResponse = {
+  requests: ShiftSwapRequest[];
 };
 
 export type ReplaceShiftAssignmentsResponse = {
@@ -114,6 +149,15 @@ export type UpdateShiftPayload = Partial<CreateShiftPayload> & {
 };
 
 export type UpdateRegistrationPayload = {
+  reviewNote?: string;
+};
+
+export type CreateShiftSwapRequestPayload = {
+  reason: string;
+};
+
+export type UpdateShiftSwapRequestPayload = {
+  status: ShiftSwapRequestStatus;
   reviewNote?: string;
 };
 
@@ -243,6 +287,36 @@ export async function cancelShiftRegistration(
 ) {
   return internalApiFetch<{ message: string; registration: ShiftRegistration }>(
     `/api/shifts/${shiftId}/registrations/${registrationId}/cancel`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function getShiftSwapRequests() {
+  return internalApiFetch<ShiftSwapRequestsResponse>("/api/shifts/swap-requests");
+}
+
+export async function createShiftSwapRequest(
+  shiftId: string,
+  payload: CreateShiftSwapRequestPayload,
+) {
+  return internalApiFetch<{ message: string; request: ShiftSwapRequest }>(
+    `/api/shifts/${shiftId}/swap-requests`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function updateShiftSwapRequest(
+  requestId: string,
+  payload: UpdateShiftSwapRequestPayload,
+) {
+  return internalApiFetch<{ message: string; request: ShiftSwapRequest }>(
+    `/api/shifts/swap-requests/${requestId}`,
     {
       method: "PATCH",
       body: JSON.stringify(payload),

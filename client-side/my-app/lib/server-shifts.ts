@@ -3,7 +3,10 @@ import {
   MyRegisteredShiftsResponse,
   ReplaceShiftAssignmentsResponse,
   Shift,
+  ShiftSwapRequest,
+  ShiftSwapRequestsResponse,
   ShiftRegistration,
+  UpdateShiftSwapRequestPayload,
   UpdateRegistrationPayload,
   UpdateShiftPayload,
   WeekShiftsResponse,
@@ -81,6 +84,13 @@ export async function fetchWeekShiftsForUser(userId: string, start: string) {
 
 export async function fetchMyRegisteredShiftsForUser(userId: string) {
   return backendShiftsFetch<MyRegisteredShiftsResponse>(userId, "/shifts/mine");
+}
+
+export async function fetchShiftSwapRequestsForUser(userId: string) {
+  return backendShiftsFetch<ShiftSwapRequestsResponse>(
+    userId,
+    "/shifts/swap-requests",
+  );
 }
 
 export async function fetchShiftByIdForUser(userId: string, shiftId: string) {
@@ -228,5 +238,35 @@ export async function cancelShiftRegistrationForUser(
     registrationId,
     "cancel",
     payload,
+  );
+}
+
+export async function createShiftSwapRequestForUser(
+  userId: string,
+  shiftId: string,
+  reason: string,
+) {
+  return backendShiftsFetch<{ message: string; request: ShiftSwapRequest }>(
+    userId,
+    `/shifts/${shiftId}/swap-requests`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    },
+  );
+}
+
+export async function updateShiftSwapRequestForUser(
+  userId: string,
+  requestId: string,
+  payload: UpdateShiftSwapRequestPayload,
+) {
+  return backendShiftsFetch<{ message: string; request: ShiftSwapRequest }>(
+    userId,
+    `/shifts/swap-requests/${requestId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
   );
 }
