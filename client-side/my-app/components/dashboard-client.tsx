@@ -26,10 +26,10 @@ type QuickAction = {
 };
 
 const navigationLinks: readonly NavigationLink[] = [
+  { href: "/manage-shifts", label: "תורנויות ופעילויות", staffOnly: true },
   { href: "/main-schedule", label: "לוח זמנים ראשי" },
   { href: "/birthdays", label: "ימי הולדת" },
   { href: "/shift-attendance", label: "נוכחות בתורנויות" },
-  { href: "/manage-shifts", label: "תורנויות ופעילויות", staffOnly: true },
   { href: "/staff-shifts", label: "אזור משמרות צוות", staffOnly: true },
   { href: "/staff-zone", label: "אזור צוות", staffOnly: true },
   { href: "/personal-area", label: "אזור אישי" },
@@ -82,9 +82,22 @@ function getNavigationLinks(userRole: UserRole) {
 }
 
 function getQuickActions(userRole: UserRole) {
-  return quickActions.filter(
-    (action) => !action.staffOnly || userRole === "staff" || userRole === "admin",
-  );
+  const isStaffUser = userRole === "staff" || userRole === "admin";
+
+  return quickActions.filter((action) => {
+    if (action.href === "/personal-area") {
+      return !isStaffUser;
+    }
+
+    if (
+      isStaffUser &&
+      (action.href === "/shift-swap-requests" || action.href === "/shift-attendance")
+    ) {
+      return false;
+    }
+
+    return !action.staffOnly || isStaffUser;
+  });
 }
 
 function formatRole(role: UserRole) {
@@ -100,6 +113,8 @@ function formatRole(role: UserRole) {
 }
 
 export function DashboardClient({ userName, userRole }: Props) {
+  const isStaffUser = userRole === "staff" || userRole === "admin";
+
   return (
     <main className="min-h-screen bg-stone-100 px-6 py-12 text-stone-900">
       <div className="mx-auto grid w-full max-w-7xl gap-8 xl:grid-cols-[18rem_minmax(0,1fr)]">
@@ -150,8 +165,9 @@ export function DashboardClient({ userName, userRole }: Props) {
                 כל המסלולים המרכזיים במקום אחד
               </h2>
               <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
-                את בקשות ההחלפה האישיות אפשר לנהל מתוך האזור האישי, ובעמוד בקשות החלפה
-                רואים בקשות פתוחות של משתמשים אחרים או מסך טיפול צוות.
+                {isStaffUser
+                  ? "ניהול התורנויות מרכז עכשיו גם את השיבוץ, בקשות ההחלפה והנוכחות, כך שכל הטיפול השוטף מרוכז במסך אחד."
+                  : "את בקשות ההחלפה האישיות אפשר לנהל מתוך האזור האישי, ובעמוד בקשות החלפה רואים בקשות פתוחות של משתמשים אחרים."}
               </p>
             </div>
           </section>
