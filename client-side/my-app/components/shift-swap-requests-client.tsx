@@ -21,6 +21,7 @@ type Props = {
   initialError?: string;
   heading?: string;
   description?: string;
+  showOwnRequestsSection?: boolean;
 };
 
 function formatDateTime(value: string) {
@@ -161,6 +162,7 @@ export function ShiftSwapRequestsClient({
   initialError = "",
   heading = "בקשות החלפה",
   description = "כאן אפשר לראות את בקשות ההחלפה הפעילות, לעקוב אחרי הבקשות שלך ולנהל אותן מול הצוות.",
+  showOwnRequestsSection,
 }: Props) {
   const [requests, setRequests] = useState(initialRequests);
   const [actionMessage, setActionMessage] = useState("");
@@ -168,6 +170,8 @@ export function ShiftSwapRequestsClient({
   const [processingKey, setProcessingKey] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const isStaffView = currentUserRole === "staff" || currentUserRole === "admin";
+  const shouldShowOwnRequestsSection =
+    showOwnRequestsSection ?? !isStaffView;
 
   useEffect(() => {
     if (controlledRequests) {
@@ -258,7 +262,10 @@ export function ShiftSwapRequestsClient({
     });
   }, [currentUserId, isStaffView, now, requests]);
 
-  const visibleRequestsCount = isStaffView ? boardRequests.length : requests.length;
+  const visibleRequestsCount =
+    isStaffView || !shouldShowOwnRequestsSection
+      ? boardRequests.length
+      : myRequests.length + boardRequests.length;
 
   function applyRequestUpdate(nextRequest: ShiftSwapRequest, message: string) {
     setRequests((current) => {
@@ -601,8 +608,12 @@ export function ShiftSwapRequestsClient({
         </p>
       ) : null}
 
-      <div className={`mt-6 grid gap-6 ${isStaffView ? "" : "xl:grid-cols-2"}`}>
-        {!isStaffView ? (
+      <div
+        className={`mt-6 grid gap-6 ${
+          isStaffView || !shouldShowOwnRequestsSection ? "" : "xl:grid-cols-2"
+        }`}
+      >
+        {!isStaffView && shouldShowOwnRequestsSection ? (
           <div className="space-y-4">
             <div>
               <h2 className="text-lg font-semibold text-stone-900">הבקשות שלי</h2>

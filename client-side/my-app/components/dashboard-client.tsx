@@ -28,7 +28,7 @@ type QuickAction = {
 const navigationLinks: readonly NavigationLink[] = [
   { href: "/main-schedule", label: "לוח זמנים ראשי" },
   { href: "/birthdays", label: "ימי הולדת" },
-  { href: "/shift-attendance", label: "נוכחות בתורנות" },
+  { href: "/shift-attendance", label: "נוכחות בתורנויות" },
   { href: "/manage-shifts", label: "תורנויות ופעילויות", staffOnly: true },
   { href: "/staff-shifts", label: "אזור משמרות צוות", staffOnly: true },
   { href: "/staff-zone", label: "אזור צוות", staffOnly: true },
@@ -43,15 +43,15 @@ const quickActions: readonly QuickAction[] = [
     eyebrow: "מעקב אישי",
     title: "התורנויות שלי",
     description:
-      "כניסה מהירה לאזור האישי כדי לאשר תורנות, לעדכן פרטים ולפתוח בקשת החלפה במקרה הצורך.",
+      "כניסה מהירה לאזור האישי כדי לאשר תורנויות, לעדכן פרטים ולפתוח בקשת החלפה במקרה הצורך.",
     accent: "from-stone-900 via-stone-800 to-stone-700",
   },
   {
     href: "/shift-swap-requests",
     eyebrow: "בקשות החלפה",
-    title: "לוח ניהול החלפות",
+    title: "בקשות החלפה",
     description:
-      "מסך ייעודי לבקשות החלפה: המשתמשים רואים את הבקשות הפעילות והצוות יכול לעקוב, לדחות או לסגור טיפול.",
+      "מסך ייעודי לבקשות החלפה: משתמשים רואים כאן בקשות פתוחות של אחרים, והצוות עוקב, דוחה או סוגר טיפול.",
     accent: "from-amber-700 via-orange-600 to-rose-500",
   },
   {
@@ -150,8 +150,8 @@ export function DashboardClient({ userName, userRole }: Props) {
                 כל המסלולים המרכזיים במקום אחד
               </h2>
               <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
-                הוספנו גם אזור ייעודי לבקשות החלפה, כך שאפשר לפתוח בקשה מהאזור
-                האישי ולנהל אותה ממסך מרכזי בדשבורד.
+                את בקשות ההחלפה האישיות אפשר לנהל מתוך האזור האישי, ובעמוד בקשות החלפה
+                רואים בקשות פתוחות של משתמשים אחרים או מסך טיפול צוות.
               </p>
             </div>
           </section>

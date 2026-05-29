@@ -54,12 +54,13 @@ export default async function ShiftSwapRequestsPage() {
           currentUserRole={session.user.role ?? "user"}
           initialRequests={requests}
           initialError={errorMessage}
-          heading={isStaffView ? "ניהול בקשות החלפה" : "לוח בקשות החלפה"}
+          heading={isStaffView ? "ניהול בקשות החלפה" : "בקשות החלפה"}
           description={
             isStaffView
               ? "כאן מוצגות כברירת מחדל רק בקשות רלוונטיות מהחודש האחרון שעדיין מחכות לטיפול או לאישור של הצוות."
-              : "כאן רואים את בקשות ההחלפה האישיות שלך ואת הבקשות הפעילות שמוצגות לכלל המשתמשים."
+              : "כאן מופיעות בקשות החלפה של משתמשים אחרים שעדיין פתוחות ורלוונטיות להחלפה."
           }
+          showOwnRequestsSection={false}
         />
       </div>
     </main>
