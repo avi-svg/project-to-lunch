@@ -5,6 +5,7 @@
   "scripts": {
     "start": "node server.js",
     "whatsapp:test": "node scripts/send-whatsapp-test.js",
+    "birthday:send": "node scripts/send-birthday-whatsapp.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

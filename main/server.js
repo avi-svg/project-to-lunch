@@ -7,6 +7,7 @@ const shiftsRoutes = require('./routes/shifts');
 const usersRoutes = require('./routes/users');
 const usersController = require('./controllers/usersController');
 const { requireInternalApiKey } = require('./lib/user-roles');
+const { startBirthdayWhatsAppScheduler } = require('./lib/birthday-whatsapp');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -487,9 +488,10 @@ async function startServer() {
     await db.testConnection();
     console.log('PostgreSQL connected');
 
-    app.listen(port, () => {
-      console.log(`Server listening on port ${port}`);
-    });
+app.listen(port, () => {
+  console.log(`Server listening on port ${port}`);
+  startBirthdayWhatsAppScheduler();
+});
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
