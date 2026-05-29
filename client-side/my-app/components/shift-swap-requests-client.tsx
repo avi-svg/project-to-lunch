@@ -73,6 +73,17 @@ function isActiveRequestStatus(status: ShiftSwapRequestStatus) {
   return status === "pending" || status === "approved";
 }
 
+function hasPendingVolunteerOffer(request: ShiftSwapRequest) {
+  return request.volunteerOffers.some((offer) => offer.status === "pending");
+}
+
+function isWithinLastMonth(value: string, now: number) {
+  const timestamp = new Date(value).getTime();
+  const lastMonthThreshold = now - 30 * 24 * 60 * 60 * 1000;
+
+  return timestamp >= lastMonthThreshold;
+}
+
 function isCancellableOfferStatus(status: ShiftSwapVolunteerOfferStatus) {
   return status === "pending";
 }
@@ -99,7 +110,9 @@ function getSwapRequestPriority(
 
     return {
       bucket: 2,
-      sortValue: isActiveRequestStatus(request.status) ? startTime : -new Date(request.updatedAt).getTime(),
+      sortValue: isActiveRequestStatus(request.status)
+        ? startTime
+        : -new Date(request.updatedAt).getTime(),
     };
   }
 
@@ -107,7 +120,19 @@ function getSwapRequestPriority(
     return { bucket: 0, sortValue: startTime };
   }
 
-  if (request.status === "approved" && hasMyOffer && request.myVolunteerOffer?.status === "pending") {
+  if (
+    isStaffView &&
+    request.status === "approved" &&
+    hasPendingVolunteerOffer(request)
+  ) {
+    return { bucket: 1, sortValue: startTime };
+  }
+
+  if (
+    request.status === "approved" &&
+    hasMyOffer &&
+    request.myVolunteerOffer?.status === "pending"
+  ) {
     return { bucket: 1, sortValue: startTime };
   }
 
@@ -115,7 +140,12 @@ function getSwapRequestPriority(
     return { bucket: 2, sortValue: startTime };
   }
 
-  if (request.status === "approved" && request.requesterUserId !== currentUserId && startTime <= now && now <= endTime) {
+  if (
+    request.status === "approved" &&
+    request.requesterUserId !== currentUserId &&
+    startTime <= now &&
+    now <= endTime
+  ) {
     return { bucket: 3, sortValue: endTime };
   }
 
@@ -188,7 +218,12 @@ export function ShiftSwapRequestsClient({
 
   const boardRequests = useMemo(() => {
     const filtered = isStaffView
-      ? requests
+      ? requests.filter(
+          (request) =>
+            request.requesterUserId !== currentUserId &&
+            isWithinLastMonth(request.createdAt, now) &&
+            (request.status === "pending" || hasPendingVolunteerOffer(request)),
+        )
       : requests.filter(
           (request) =>
             request.requesterUserId !== currentUserId &&
@@ -223,6 +258,8 @@ export function ShiftSwapRequestsClient({
     });
   }, [currentUserId, isStaffView, now, requests]);
 
+  const visibleRequestsCount = isStaffView ? boardRequests.length : requests.length;
+
   function applyRequestUpdate(nextRequest: ShiftSwapRequest, message: string) {
     setRequests((current) => {
       const nextRequests = current.map((request) =>
@@ -247,7 +284,9 @@ export function ShiftSwapRequestsClient({
       applyRequestUpdate(result.request, result.message);
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : "לא ניתן לעדכן את בקשת ההחלפה כרגע.",
+        error instanceof Error
+          ? error.message
+          : "לא ניתן לעדכן את בקשת ההחלפה כרגע.",
       );
     } finally {
       setProcessingKey(null);
@@ -264,7 +303,9 @@ export function ShiftSwapRequestsClient({
       applyRequestUpdate(result.request, result.message);
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : "לא ניתן לשלוח הצעת החלפה כרגע.",
+        error instanceof Error
+          ? error.message
+          : "לא ניתן לשלוח הצעת החלפה כרגע.",
       );
     } finally {
       setProcessingKey(null);
@@ -287,7 +328,9 @@ export function ShiftSwapRequestsClient({
       applyRequestUpdate(result.request, result.message);
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : "לא ניתן לעדכן את הצעת ההחלפה כרגע.",
+        error instanceof Error
+          ? error.message
+          : "לא ניתן לעדכן את הצעת ההחלפה כרגע.",
       );
     } finally {
       setProcessingKey(null);
@@ -299,7 +342,8 @@ export function ShiftSwapRequestsClient({
     offer: ShiftSwapVolunteerOffer,
   ) {
     const isMine = offer.volunteerUserId === currentUserId;
-    const canApprove = isStaffView && offer.status === "pending" && request.status === "approved";
+    const canApprove =
+      isStaffView && offer.status === "pending" && request.status === "approved";
     const canReject = isStaffView && offer.status === "pending";
     const canCancel = isMine && isCancellableOfferStatus(offer.status);
 
@@ -382,10 +426,8 @@ export function ShiftSwapRequestsClient({
     const canCancelRequest = isOwner && isActiveRequestStatus(request.status);
     const canRejectRequest = isStaffView && request.status === "pending";
     const canCloseRequest = isStaffView && request.status === "approved";
-    const isOpenForVolunteers =
-      !isStaffView && !isOwner && request.status === "approved";
-    const canVolunteer =
-      isOpenForVolunteers && request.myVolunteerOffer === null;
+    const isOpenForVolunteers = !isStaffView && !isOwner && request.status === "approved";
+    const canVolunteer = isOpenForVolunteers && request.myVolunteerOffer === null;
 
     return (
       <article
@@ -401,25 +443,20 @@ export function ShiftSwapRequestsClient({
             הכי רלוונטי עכשיו
           </div>
         ) : null}
+
         {isOpenForVolunteers ? (
           <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
             {request.myVolunteerOffer
-              ? `בקשת החלפה פתוחה. ההצעה שלך כרגע: ${formatOfferStatus(request.myVolunteerOffer.status)}`
-              : "בקשת החלפה פתוחה להתנדבות. אם מתאים לך להחליף, אפשר להגיש כאן מועמדות לצוות."}
+              ? `בקשת ההחלפה פתוחה. ההצעה שלך כרגע: ${formatOfferStatus(request.myVolunteerOffer.status)}`
+              : "בקשת ההחלפה פתוחה להתנדבות. אם מתאים לך להחליף, אפשר להגיש כאן מועמדות לצוות."}
           </div>
         ) : null}
 
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
-            <p className="text-lg font-semibold text-stone-900">
-              {request.shift.title}
-            </p>
-            <p className="text-sm text-stone-600">
-              התחלה: {formatDateTime(request.shift.startTime)}
-            </p>
-            <p className="text-sm text-stone-600">
-              סיום: {formatDateTime(request.shift.endTime)}
-            </p>
+            <p className="text-lg font-semibold text-stone-900">{request.shift.title}</p>
+            <p className="text-sm text-stone-600">התחלה: {formatDateTime(request.shift.startTime)}</p>
+            <p className="text-sm text-stone-600">סיום: {formatDateTime(request.shift.endTime)}</p>
             <p className="text-sm text-stone-600">
               מבקש/ת: {request.requester.name ?? request.requester.email}
             </p>
@@ -548,7 +585,7 @@ export function ShiftSwapRequestsClient({
           </p>
         </div>
         <span className="rounded-full bg-stone-100 px-4 py-2 text-sm text-stone-700">
-          {requests.length} בקשות
+          {visibleRequestsCount} בקשות
         </span>
       </div>
 
@@ -564,23 +601,25 @@ export function ShiftSwapRequestsClient({
         </p>
       ) : null}
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold text-stone-900">הבקשות שלי</h2>
-            <p className="mt-1 text-sm text-stone-600">
-              מעקב אחרי בקשות ההחלפה שפתחת מהתורנויות האישיות שלך.
-            </p>
-          </div>
-
-          {myRequests.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-600">
-              עדיין לא פתחת בקשת החלפה.
+      <div className={`mt-6 grid gap-6 ${isStaffView ? "" : "xl:grid-cols-2"}`}>
+        {!isStaffView ? (
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold text-stone-900">הבקשות שלי</h2>
+              <p className="mt-1 text-sm text-stone-600">
+                מעקב אחרי בקשות ההחלפה שפתחת מהתורנויות האישיות שלך.
+              </p>
             </div>
-          ) : (
-            myRequests.map((request, index) => renderRequestCard(request, index === 0))
-          )}
-        </div>
+
+            {myRequests.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-600">
+                עדיין לא פתחת בקשת החלפה.
+              </div>
+            ) : (
+              myRequests.map((request, index) => renderRequestCard(request, index === 0))
+            )}
+          </div>
+        ) : null}
 
         <div className="space-y-4">
           <div>
@@ -589,7 +628,7 @@ export function ShiftSwapRequestsClient({
             </h2>
             <p className="mt-1 text-sm text-stone-600">
               {isStaffView
-                ? "כאן הצוות רואה את סיבת הבקשה, את המועמדים להחלפה, ומאשר את ההחלפה בפועל."
+                ? "כאן הצוות רואה כברירת מחדל רק בקשות רלוונטיות מהחודש האחרון שעדיין דורשות החלטה או אישור."
                 : "כאן מופיעות בקשות של משתמשים אחרים שעדיין פתוחות להחלפה. מכל כרטיס אפשר להגיש התנדבות להחלפה ולעקוב אחרי ההצעה שלך."}
             </p>
           </div>
@@ -597,7 +636,7 @@ export function ShiftSwapRequestsClient({
           {boardRequests.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-600">
               {isStaffView
-                ? "אין כרגע בקשות החלפה להצגה."
+                ? "אין כרגע בקשות רלוונטיות מהחודש האחרון שממתינות לטיפול צוות."
                 : "אין כרגע בקשות החלפה פעילות להצגה."}
             </div>
           ) : (
