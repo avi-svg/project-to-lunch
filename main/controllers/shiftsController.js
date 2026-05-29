@@ -1899,6 +1899,101 @@ async function updateShift(req, res, next) {
   }
 }
 
+async function deleteShift(req, res, next) {
+  const { id } = req.params;
+
+  if (!isValidUuid(id)) {
+    return res.status(400).json({
+      message: 'Shift id must be a valid UUID.',
+    });
+  }
+
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const existingResult = await loadShiftById(id, client);
+
+    if (existingResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        message: 'Shift not found.',
+      });
+    }
+
+    const shift = existingResult.rows[0];
+
+    if (!canManageShift(req.actor, shift)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        message: 'You do not have permission to delete this shift.',
+      });
+    }
+
+    await client.query(
+      `DELETE FROM public.shift_swap_request_volunteers
+       WHERE swap_request_id IN (
+         SELECT id
+         FROM public.shift_swap_requests
+         WHERE shift_id = $1
+            OR requester_registration_id IN (
+              SELECT id
+              FROM public.shift_registrations
+              WHERE shift_id = $1
+            )
+       )`,
+      [id]
+    );
+
+    await client.query(
+      `DELETE FROM public.shift_attendance
+       WHERE shift_id = $1
+          OR registration_id IN (
+            SELECT id
+            FROM public.shift_registrations
+            WHERE shift_id = $1
+          )`,
+      [id]
+    );
+
+    await client.query(
+      `DELETE FROM public.shift_swap_requests
+       WHERE shift_id = $1
+          OR requester_registration_id IN (
+            SELECT id
+            FROM public.shift_registrations
+            WHERE shift_id = $1
+          )`,
+      [id]
+    );
+
+    await client.query(
+      `DELETE FROM public.shift_registrations
+       WHERE shift_id = $1`,
+      [id]
+    );
+
+    await client.query(
+      `DELETE FROM public.shifts
+       WHERE id = $1`,
+      [id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json({
+      message: 'Shift deleted successfully.',
+      deletedShiftId: id,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    return next(error);
+  } finally {
+    client.release();
+  }
+}
+
 async function registerForShift(req, res, next) {
   const { id } = req.params;
 
@@ -3416,6 +3511,7 @@ module.exports = {
   createSwapRequest,
   createSwapVolunteerOffer,
   createShift,
+  deleteShift,
   getShiftById,
   listShiftAttendance,
   listShiftAssignmentPools,

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import type { Shift, ShiftRegistrationStatus } from "@/lib/shifts";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { deleteShift, type Shift, type ShiftRegistrationStatus } from "@/lib/shifts";
 
 type Props = {
   shift: Shift;
@@ -91,6 +92,7 @@ function getRegistrationTone(status: ShiftRegistrationStatus) {
 }
 
 export function ManageShiftDetailClient({ shift }: Props) {
+  const router = useRouter();
   const activeRegistrations = useMemo(
     () =>
       (shift.registrations ?? []).filter(
@@ -112,6 +114,38 @@ export function ManageShiftDetailClient({ shift }: Props) {
   const hasPendingAssignments = activeRegistrations.some(
     (registration) => registration.status === "pending",
   );
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [isDeleting, startDeleteTransition] = useTransition();
+  const isDeleteConfirmationMatched = deleteConfirmationId.trim() === shift.id;
+
+  function handleDeleteShift() {
+    if (!isDeleteConfirmationMatched || isDeleting) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "האם למחוק את התורנות ואת כל הנתונים הקשורים אליה? אי אפשר לשחזר את הפעולה הזאת.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleteError("");
+
+    startDeleteTransition(async () => {
+      try {
+        await deleteShift(shift.id);
+        router.push("/manage-shifts/manage");
+        router.refresh();
+      } catch (error) {
+        setDeleteError(
+          error instanceof Error ? error.message : "מחיקת התורנות נכשלה.",
+        );
+      }
+    });
+  }
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_24rem]">
@@ -371,6 +405,51 @@ export function ManageShiftDetailClient({ shift }: Props) {
               </p>
             </div>
           </div>
+        </section>
+        <section className="rounded-[2rem] border border-rose-200 bg-rose-50 p-6 shadow-sm">
+          <p className="text-sm font-semibold tracking-[0.2em] text-rose-700">
+            מחיקה
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold text-rose-950">
+            מחיקת תורנות
+          </h2>
+          <p className="mt-3 text-sm leading-7 text-rose-900">
+            הפעולה הזאת מוחקת את התורנות, ההרשמות, דיווחי הנוכחות ובקשות ההחלפה
+            שקשורים אליה. כדי לאשר את המחיקה צריך להקליד את מזהה ה-DB של
+            התורנות כפי שהוא מופיע כאן במסך הניהול.
+          </p>
+
+          <div className="mt-5 rounded-3xl border border-rose-200 bg-white p-4">
+            <p className="text-sm text-rose-700">מזהה תורנות ב-DB</p>
+            <code className="mt-2 block break-all rounded-2xl bg-stone-900 px-4 py-3 text-sm text-white">
+              {shift.id}
+            </code>
+          </div>
+
+          <label className="mt-5 block text-sm font-medium text-rose-950">
+            הקלד את המזהה המלא כדי לאפשר מחיקה
+          </label>
+          <input
+            type="text"
+            value={deleteConfirmationId}
+            onChange={(event) => setDeleteConfirmationId(event.target.value)}
+            placeholder="הדבק כאן את ה-ID המלא"
+            dir="ltr"
+            className="mt-2 w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-rose-400"
+          />
+
+          {deleteError ? (
+            <p className="mt-3 text-sm text-rose-700">{deleteError}</p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={handleDeleteShift}
+            disabled={!isDeleteConfirmationMatched || isDeleting}
+            className="mt-5 flex w-full items-center justify-center rounded-2xl bg-rose-700 px-5 py-3 text-sm font-medium text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-rose-300"
+          >
+            {isDeleting ? "מוחק תורנות..." : "מחק את התורנות וכל מה שקשור אליה"}
+          </button>
         </section>
       </aside>
     </div>

@@ -153,6 +153,16 @@ export async function updateShiftForUser(
   );
 }
 
+export async function deleteShiftForUser(userId: string, shiftId: string) {
+  return backendShiftsFetch<{ message: string; deletedShiftId: string }>(
+    userId,
+    `/shifts/${shiftId}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
 export async function replaceShiftAssignmentsForUser(
   userId: string,
   shiftId: string,

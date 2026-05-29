@@ -292,6 +292,15 @@ export async function updateShift(shiftId: string, payload: UpdateShiftPayload) 
   );
 }
 
+export async function deleteShift(shiftId: string) {
+  return internalApiFetch<{ message: string; deletedShiftId: string }>(
+    `/api/shifts/${shiftId}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
 export async function replaceShiftAssignments(
   shiftId: string,
   userIds: string[],

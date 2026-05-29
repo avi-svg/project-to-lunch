@@ -26,6 +26,7 @@ router.get('/:id/assignment-pools', shiftsController.listShiftAssignmentPools);
 router.post('/:id/swap-requests', shiftsController.createSwapRequest);
 router.post('/', shiftsController.createShift);
 router.patch('/:id', shiftsController.updateShift);
+router.delete('/:id', shiftsController.deleteShift);
 router.put('/:id/assignments', shiftsController.replaceShiftAssignments);
 router.post('/:id/register', shiftsController.registerForShift);
 router.post('/:id/attendance', shiftsController.reportAttendance);
