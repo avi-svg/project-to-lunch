@@ -48,6 +48,14 @@ export default async function ShiftSwapRequestsPage({
     <main className="min-h-screen bg-stone-100 px-6 py-12 text-stone-900">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
         <div className="flex flex-wrap gap-3">
+          {selectedShiftId ? (
+            <Link
+              href={`/manage-shifts/${selectedShiftId}`}
+              className="inline-flex rounded-2xl border border-stone-300 bg-white px-5 py-3 text-sm font-medium text-stone-900 transition hover:border-stone-900"
+            >
+              חזרה לניהול התורנות
+            </Link>
+          ) : null}
           <Link
             href="/dashboard"
             className="inline-flex rounded-2xl border border-stone-300 bg-white px-5 py-3 text-sm font-medium text-stone-900 transition hover:border-stone-900"
