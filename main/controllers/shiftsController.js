@@ -2772,10 +2772,11 @@ async function updateAttendanceStatus(req, res, next, nextStatus) {
 
     const shift = shiftResult.rows[0];
 
-    if (new Date(shift.end_time).getTime() > Date.now()) {
+    if (Date.now() < getAttendanceWindowStartTime(shift.start_time).getTime()) {
       await client.query('ROLLBACK');
       return res.status(409).json({
-        message: 'Attendance can only be reviewed after the shift has ended.',
+        message:
+          'Attendance can only be reviewed from five minutes before the shift starts and later.',
       });
     }
 
