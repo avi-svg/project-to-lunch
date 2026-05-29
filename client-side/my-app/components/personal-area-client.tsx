@@ -30,6 +30,7 @@ import {
   type ShiftSwapRequest,
   type UserRole,
 } from "@/lib/shifts";
+import { ShiftNotesBoard } from "@/components/shift-notes-board";
 
 type Props = {
   currentUser: {
@@ -239,6 +240,7 @@ export function PersonalAreaClient({
   const [profileMessage, setProfileMessage] = useState("");
   const [profileError, setProfileError] = useState(initialProfileError);
   const [openSwapShiftId, setOpenSwapShiftId] = useState<string | null>(null);
+  const [openNotesShiftId, setOpenNotesShiftId] = useState<string | null>(null);
   const [swapReasonDraft, setSwapReasonDraft] = useState("");
   const [creatingSwapShiftId, setCreatingSwapShiftId] = useState<string | null>(
     null,
@@ -793,6 +795,7 @@ export function PersonalAreaClient({
                   const myRegistration = shift.myRegistration;
                   const activeSwapRequest = activeSwapRequestsByShiftId.get(shift.id);
                   const isSwapFormOpen = openSwapShiftId === shift.id;
+                  const isNotesOpen = openNotesShiftId === shift.id;
 
                   if (!myRegistration) {
                     return null;
@@ -869,6 +872,18 @@ export function PersonalAreaClient({
                                   : "סטטוס התורנות עודכן על ידי הצוות."}
                               </p>
 
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOpenNotesShiftId((current) =>
+                                    current === shift.id ? null : shift.id,
+                                  )
+                                }
+                                className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-medium text-stone-900 transition hover:border-stone-900"
+                              >
+                                {isNotesOpen ? "סגירת לוח ההערות" : "לוח הערות חשוב"}
+                              </button>
+
                               {myRegistration.status === "approved" &&
                               !activeSwapRequest ? (
                                 <>
@@ -925,6 +940,18 @@ export function PersonalAreaClient({
                           )}
                         </div>
                       </div>
+
+                      {isNotesOpen ? (
+                        <div className="mt-5">
+                          <ShiftNotesBoard
+                            shiftId={shift.id}
+                            currentUserId={currentUser.id}
+                            currentUserRole={currentUser.role}
+                            title="לוח הערות חשוב לתורנות"
+                            description="כאן רואים עדכונים והערות חשובות של התורנות ויכולים להוסיף הודעה חדשה."
+                          />
+                        </div>
+                      ) : null}
                     </article>
                   );
                 })

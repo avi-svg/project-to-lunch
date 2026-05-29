@@ -1,11 +1,13 @@
 import {
   CreateShiftPayload,
+  CreateShiftNotePayload,
   ShiftAttendance,
   ShiftAttendanceDashboardResponse,
   ShiftAssignmentTypesByUserId,
   MyRegisteredShiftsResponse,
   ReplaceShiftAssignmentsResponse,
   Shift,
+  ShiftNote,
   ShiftAssignmentRequestType,
   ShiftSwapRequest,
   ShiftSwapRequestsResponse,
@@ -110,6 +112,13 @@ export async function fetchShiftByIdForUser(userId: string, shiftId: string) {
   return backendShiftsFetch<{ shift: Shift }>(userId, `/shifts/${shiftId}`);
 }
 
+export async function fetchShiftNotesForUser(userId: string, shiftId: string) {
+  return backendShiftsFetch<{ notes: ShiftNote[] }>(
+    userId,
+    `/shifts/${shiftId}/notes`,
+  );
+}
+
 export type ShiftAssignmentPoolsResponse = {
   shiftType: Shift["shiftType"] | null;
   monthStart: string | null;
@@ -159,6 +168,21 @@ export async function deleteShiftForUser(userId: string, shiftId: string) {
     `/shifts/${shiftId}`,
     {
       method: "DELETE",
+    },
+  );
+}
+
+export async function createShiftNoteForUser(
+  userId: string,
+  shiftId: string,
+  payload: CreateShiftNotePayload,
+) {
+  return backendShiftsFetch<{ message: string; note: ShiftNote }>(
+    userId,
+    `/shifts/${shiftId}/notes`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
     },
   );
 }

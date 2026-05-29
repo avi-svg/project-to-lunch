@@ -89,6 +89,8 @@ export default async function ManageSingleShiftPage({ params }: PageProps) {
           <ManageShiftDetailClient
             shift={shift}
             activeSwapRequestsCount={activeSwapRequestsCount}
+            currentUserId={session.user.id}
+            currentUserRole={session.user.role ?? "user"}
           />
         )}
       </div>

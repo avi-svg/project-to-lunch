@@ -9,6 +9,7 @@ router.get('/week', shiftsController.listWeekShifts);
 router.get('/mine', shiftsController.listMyRegisteredShifts);
 router.get('/attendance', shiftsController.listShiftAttendance);
 router.get('/swap-requests', shiftsController.listSwapRequests);
+router.get('/:id/notes', shiftsController.listShiftNotes);
 router.patch(
   '/swap-requests/:requestId',
   shiftsController.updateSwapRequestStatus
@@ -23,6 +24,7 @@ router.patch(
 );
 router.get('/:id', shiftsController.getShiftById);
 router.get('/:id/assignment-pools', shiftsController.listShiftAssignmentPools);
+router.post('/:id/notes', shiftsController.createShiftNote);
 router.post('/:id/swap-requests', shiftsController.createSwapRequest);
 router.post('/', shiftsController.createShift);
 router.patch('/:id', shiftsController.updateShift);

@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { deleteShift, type Shift, type ShiftRegistrationStatus } from "@/lib/shifts";
+import { ShiftNotesBoard } from "@/components/shift-notes-board";
+import { deleteShift, type Shift, type ShiftRegistrationStatus, type UserRole } from "@/lib/shifts";
 
 type Props = {
   shift: Shift;
   activeSwapRequestsCount: number;
+  currentUserId: string;
+  currentUserRole: UserRole;
 };
 
 function formatDateTime(value: string) {
@@ -20,22 +23,6 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatStoredShiftStatus(status: Shift["status"]) {
-  if (status === "open") {
-    return "פתוחה";
-  }
-
-  if (status === "closed") {
-    return "סגורה";
-  }
-
-  if (status === "completed") {
-    return "הושלמה";
-  }
-
-  return "בוטלה";
-}
-
 function formatShiftType(shiftType: Shift["shiftType"]) {
   if (shiftType === "cleaning") {
     return "ניקיון";
@@ -43,18 +30,6 @@ function formatShiftType(shiftType: Shift["shiftType"]) {
 
   if (shiftType === "dinner") {
     return "ארוחת ערב";
-  }
-
-  return "לא הוגדר";
-}
-
-function formatAssignmentMode(mode: Shift["assignmentMode"]) {
-  if (mode === "assign-now") {
-    return "שיבוץ מיידי לאחר יצירה";
-  }
-
-  if (mode === "assign-later") {
-    return "שיבוץ בשלב מאוחר יותר";
   }
 
   return "לא הוגדר";
@@ -195,6 +170,8 @@ function getShiftLifecycleStatus(shift: Shift, activeSwapRequestsCount: number) 
 export function ManageShiftDetailClient({
   shift,
   activeSwapRequestsCount,
+  currentUserId,
+  currentUserRole,
 }: Props) {
   const router = useRouter();
   const activeRegistrations = useMemo(
@@ -485,68 +462,13 @@ export function ManageShiftDetailClient({
       </section>
 
       <aside className="space-y-6">
-        <section className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
-            פרטי התורנות
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold text-stone-900">
-            תמונת מצב מלאה
-          </h2>
-
-          <div className="mt-6 space-y-4">
-            <div className="rounded-3xl border border-stone-200 bg-stone-50 p-4">
-              <p className="text-sm text-stone-500">סוג תורנות</p>
-              <p className="mt-1 text-lg font-semibold text-stone-900">
-                {formatShiftType(shift.shiftType)}
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-stone-200 bg-stone-50 p-4">
-              <p className="text-sm text-stone-500">מצב שיבוץ</p>
-              <p className="mt-1 text-lg font-semibold text-stone-900">
-                {formatAssignmentMode(shift.assignmentMode)}
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-stone-200 bg-stone-50 p-4">
-              <p className="text-sm text-stone-500">סטטוס שמור במערכת</p>
-              <p className="mt-1 text-base font-semibold text-stone-900">
-                {formatStoredShiftStatus(shift.status)}
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-stone-200 bg-stone-50 p-4">
-              <p className="text-sm text-stone-500">תפוסה נוכחית</p>
-              <p className="mt-1 text-base font-semibold text-stone-900">
-                {shift.reservedSlots} מתוך {shift.capacity}
-              </p>
-              <p className="mt-1 text-sm text-stone-600">
-                {shift.availableSlots} מקומות פנויים
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-stone-200 bg-stone-50 p-4">
-              <p className="text-sm text-stone-500">מיקום</p>
-              <p className="mt-1 text-base font-semibold text-stone-900">
-                {shift.location || "לא הוגדר"}
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-stone-200 bg-stone-50 p-4">
-              <p className="text-sm text-stone-500">תיאור</p>
-              <p className="mt-1 text-sm leading-7 text-stone-700">
-                {shift.description || "אין תיאור נוסף לתורנות הזאת."}
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-stone-200 bg-stone-50 p-4">
-              <p className="text-sm text-stone-500">נוצרה על ידי</p>
-              <p className="mt-1 text-base font-semibold text-stone-900">
-                {shift.createdBy.name ?? shift.createdBy.email}
-              </p>
-            </div>
-          </div>
-        </section>
+        <ShiftNotesBoard
+          shiftId={shift.id}
+          currentUserId={currentUserId}
+          currentUserRole={currentUserRole}
+          title="לוח הערות חשוב לתורנות"
+          description="זהו לוח ההערות המשותף של התורנות. כל מי שרשום כרגע לתורנות רואה את ההודעות, ואיש צוות יכול לסמן אם הערה מסוימת מיועדת בעתיד גם להתרעת וואטסאפ."
+        />
 
         <section className="rounded-[2rem] border border-rose-200 bg-rose-50 p-6 shadow-sm">
           <p className="text-sm font-semibold tracking-[0.2em] text-rose-700">

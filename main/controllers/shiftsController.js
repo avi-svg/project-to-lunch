@@ -441,6 +441,23 @@ function formatAttendanceRow(row) {
   };
 }
 
+function formatShiftNoteRow(row) {
+  return {
+    id: row.id,
+    shiftId: row.shift_id,
+    message: row.message,
+    sendWhatsAppAlert: Boolean(row.notify_whatsapp),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    author: {
+      id: row.author_user_id,
+      name: row.author_name,
+      email: row.author_email,
+      role: normalizeRole(row.author_role),
+    },
+  };
+}
+
 function formatSwapVolunteerOfferRow(row) {
   return {
     id: row.id,
@@ -669,6 +686,64 @@ async function loadShiftById(shiftId, client = db) {
      LIMIT 1`,
     [shiftId]
   );
+}
+
+async function loadShiftNotes(shiftId, client = db) {
+  const result = await client.query(
+    `SELECT
+       sn.*,
+       author.name AS author_name,
+       author.email AS author_email,
+       author.role AS author_role
+     FROM public.shift_notes sn
+     JOIN public.users author
+       ON author.id = sn.author_user_id
+     WHERE sn.shift_id = $1
+     ORDER BY sn.created_at ASC, sn.id ASC`,
+    [shiftId]
+  );
+
+  return result.rows.map(formatShiftNoteRow);
+}
+
+async function loadShiftNoteById(noteId, client = db) {
+  const result = await client.query(
+    `SELECT
+       sn.*,
+       author.name AS author_name,
+       author.email AS author_email,
+       author.role AS author_role
+     FROM public.shift_notes sn
+     JOIN public.users author
+       ON author.id = sn.author_user_id
+     WHERE sn.id = $1
+     LIMIT 1`,
+    [noteId]
+  );
+
+  return result.rows.length > 0 ? formatShiftNoteRow(result.rows[0]) : null;
+}
+
+async function actorCanAccessShiftNotes(actor, shiftId, client = db) {
+  if (!actor || !isValidUuid(shiftId)) {
+    return false;
+  }
+
+  if (isStaffLike(actor.role)) {
+    return true;
+  }
+
+  const result = await client.query(
+    `SELECT 1
+     FROM public.shift_registrations
+     WHERE shift_id = $1
+       AND user_id = $2
+       AND status IN ('pending', 'approved')
+     LIMIT 1`,
+    [shiftId, actor.id]
+  );
+
+  return result.rows.length > 0;
 }
 
 async function loadShiftRegistrations(shiftId, client = db) {
@@ -1159,6 +1234,101 @@ async function listSwapRequests(req, res, next) {
     return res.json({ requests });
   } catch (error) {
     return next(error);
+  }
+}
+
+async function listShiftNotes(req, res, next) {
+  const { id } = req.params;
+
+  if (!isValidUuid(id)) {
+    return res.status(400).json({
+      message: 'Shift id must be a valid UUID.',
+    });
+  }
+
+  try {
+    const shiftResult = await loadShiftById(id);
+
+    if (shiftResult.rows.length === 0) {
+      return res.status(404).json({
+        message: 'Shift not found.',
+      });
+    }
+
+    if (!(await actorCanAccessShiftNotes(req.actor, id))) {
+      return res.status(403).json({
+        message: 'You do not have permission to view notes for this shift.',
+      });
+    }
+
+    return res.json({
+      notes: await loadShiftNotes(id),
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function createShiftNote(req, res, next) {
+  const { id } = req.params;
+  const { message, sendWhatsAppAlert } = req.body || {};
+  const normalizedMessage = typeof message === 'string' ? message.trim() : '';
+
+  if (!isValidUuid(id)) {
+    return res.status(400).json({
+      message: 'Shift id must be a valid UUID.',
+    });
+  }
+
+  if (!normalizedMessage) {
+    return res.status(400).json({
+      message: 'A note message is required.',
+    });
+  }
+
+  const client = await db.pool.connect();
+
+  try {
+    const shiftResult = await loadShiftById(id, client);
+
+    if (shiftResult.rows.length === 0) {
+      return res.status(404).json({
+        message: 'Shift not found.',
+      });
+    }
+
+    if (!(await actorCanAccessShiftNotes(req.actor, id, client))) {
+      return res.status(403).json({
+        message: 'You do not have permission to add notes to this shift.',
+      });
+    }
+
+    const noteId = randomUUID();
+    const notifyWhatsApp =
+      isStaffLike(req.actor.role) && sendWhatsAppAlert === true;
+
+    await client.query(
+      `INSERT INTO public.shift_notes (
+         id,
+         shift_id,
+         author_user_id,
+         message,
+         notify_whatsapp
+       )
+       VALUES ($1, $2, $3, $4, $5)`,
+      [noteId, id, req.actor.id, normalizedMessage, notifyWhatsApp]
+    );
+
+    const note = await loadShiftNoteById(noteId, client);
+
+    return res.status(201).json({
+      message: 'Shift note created successfully.',
+      note,
+    });
+  } catch (error) {
+    return next(error);
+  } finally {
+    client.release();
   }
 }
 
@@ -3510,9 +3680,11 @@ module.exports = {
   confirmOwnRegistration,
   createSwapRequest,
   createSwapVolunteerOffer,
+  createShiftNote,
   createShift,
   deleteShift,
   getShiftById,
+  listShiftNotes,
   listShiftAttendance,
   listShiftAssignmentPools,
   listMyRegisteredShifts,

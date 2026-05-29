@@ -42,6 +42,16 @@ export type ShiftActor = {
   role: UserRole;
 };
 
+export type ShiftNote = {
+  id: string;
+  shiftId: string;
+  message: string;
+  sendWhatsAppAlert: boolean;
+  createdAt: string;
+  updatedAt: string;
+  author: ShiftActor;
+};
+
 export type ShiftRegistration = {
   id: string;
   shiftId: string;
@@ -236,6 +246,11 @@ export type UpdateShiftSwapRequestPayload = {
 export type UpdateShiftSwapVolunteerOfferPayload = {
   status: ShiftSwapVolunteerOfferStatus;
   reviewNote?: string;
+};
+
+export type CreateShiftNotePayload = {
+  message: string;
+  sendWhatsAppAlert?: boolean;
 };
 
 async function internalApiFetch<T>(
@@ -445,6 +460,23 @@ export async function rejectShiftAttendance(
   payload: UpdateAttendancePayload = {},
 ) {
   return updateShiftAttendance(shiftId, attendanceId, "reject", payload);
+}
+
+export async function getShiftNotes(shiftId: string) {
+  return internalApiFetch<{ notes: ShiftNote[] }>(`/api/shifts/${shiftId}/notes`);
+}
+
+export async function createShiftNote(
+  shiftId: string,
+  payload: CreateShiftNotePayload,
+) {
+  return internalApiFetch<{ message: string; note: ShiftNote }>(
+    `/api/shifts/${shiftId}/notes`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function createShiftSwapRequest(
