@@ -29,6 +29,10 @@ router.patch('/:id', shiftsController.updateShift);
 router.put('/:id/assignments', shiftsController.replaceShiftAssignments);
 router.post('/:id/register', shiftsController.registerForShift);
 router.post('/:id/attendance', shiftsController.reportAttendance);
+router.post(
+  '/:id/registrations/:registrationId/attendance/manual',
+  shiftsController.reportAttendanceManually
+);
 router.patch(
   '/:id/attendance/:attendanceId/approve',
   shiftsController.approveAttendance

@@ -23,6 +23,7 @@ export type ShiftSwapVolunteerOfferStatus =
   | "rejected"
   | "cancelled";
 export type ShiftAttendanceStatus = "pending" | "approved" | "rejected";
+export type ShiftAttendanceReportSource = "self" | "staff-manual";
 
 export type ShiftAssignmentPoolUser = {
   id: string;
@@ -61,6 +62,7 @@ export type ShiftAttendance = {
   registrationId: string;
   userId: string;
   status: ShiftAttendanceStatus;
+  reportSource: ShiftAttendanceReportSource;
   reportedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -68,6 +70,7 @@ export type ShiftAttendance = {
   reviewNote: string | null;
   user: ShiftActor | null;
   reviewedBy: Omit<ShiftActor, "role"> | null;
+  reportedBy: Omit<ShiftActor, "role"> | null;
 };
 
 export type ShiftAssignmentNotificationSummary = {
@@ -386,6 +389,18 @@ export async function getShiftAttendanceDashboard() {
 export async function reportShiftAttendance(shiftId: string) {
   return internalApiFetch<{ message: string; attendance: ShiftAttendance }>(
     `/api/shifts/${shiftId}/attendance`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function reportShiftAttendanceManually(
+  shiftId: string,
+  registrationId: string,
+) {
+  return internalApiFetch<{ message: string; attendance: ShiftAttendance }>(
+    `/api/shifts/${shiftId}/registrations/${registrationId}/attendance/manual`,
     {
       method: "POST",
     },

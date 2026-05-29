@@ -5,6 +5,7 @@ import {
   approveShiftAttendance,
   rejectShiftAttendance,
   reportShiftAttendance,
+  reportShiftAttendanceManually,
   type Shift,
   type ShiftAttendance,
   type ShiftAttendanceStatus,
@@ -108,6 +109,16 @@ function getAttendanceStatusLabel(status: ShiftAttendanceStatus) {
   return "ממתין לאישור";
 }
 
+function getAttendanceSourceLabel(attendance: ShiftAttendance) {
+  if (attendance.reportSource === "staff-manual") {
+    return attendance.reportedBy?.name
+      ? `דווח ידנית על ידי ${attendance.reportedBy.name}`
+      : "דווח ידנית על ידי איש צוות";
+  }
+
+  return "דווח עצמאית על ידי המשתמש";
+}
+
 function getAttendanceBadgeClass(status: ShiftAttendanceStatus | "missing") {
   if (status === "approved") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
@@ -172,6 +183,9 @@ function getMyShiftPriority(shift: Shift, now: number) {
 }
 
 function getReviewShiftPriority(shift: Shift) {
+  const now = Date.now();
+  const windowStart = getAttendanceWindowStart(shift).getTime();
+  const endTime = new Date(shift.endTime).getTime();
   const approvedRegistrations = (shift.registrations ?? []).filter(
     (registration) => registration.status === "approved",
   );
@@ -182,18 +196,33 @@ function getReviewShiftPriority(shift: Shift) {
     (registration) => registration.attendance === null,
   ).length;
 
+  if (windowStart <= now && endTime >= now && (pendingCount > 0 || missingCount > 0)) {
+    return { bucket: 0, sortValue: endTime };
+  }
+
+  if (windowStart <= now && endTime < now && pendingCount > 0) {
+    return {
+      bucket: 1,
+      sortValue: -pendingCount * 10000000000000 + endTime,
+    };
+  }
+
+  if (windowStart <= now && missingCount > 0) {
+    return { bucket: 2, sortValue: -endTime };
+  }
+
   if (pendingCount > 0) {
     return {
-      bucket: 0,
-      sortValue: -pendingCount * 10000000000000 + new Date(shift.endTime).getTime(),
+      bucket: 3,
+      sortValue: -pendingCount * 10000000000000 + endTime,
     };
   }
 
   if (missingCount > 0) {
-    return { bucket: 1, sortValue: -new Date(shift.endTime).getTime() };
+    return { bucket: 4, sortValue: -endTime };
   }
 
-  return { bucket: 2, sortValue: -new Date(shift.endTime).getTime() };
+  return { bucket: 5, sortValue: -endTime };
 }
 
 function getReviewRegistrationPriority(registration: NonNullable<Shift["registrations"]>[number]) {
@@ -226,6 +255,9 @@ export function ShiftAttendanceClient({
   const [feedback, setFeedback] = useState(initialError);
   const [activeShiftId, setActiveShiftId] = useState<string | null>(null);
   const [activeAttendanceId, setActiveAttendanceId] = useState<string | null>(null);
+  const [activeManualRegistrationId, setActiveManualRegistrationId] = useState<
+    string | null
+  >(null);
   const [now, setNow] = useState(() => Date.now());
   const [isPending, startTransition] = useTransition();
 
@@ -368,6 +400,25 @@ export function ShiftAttendanceClient({
     });
   }
 
+  function handleManualAttendance(shiftId: string, registrationId: string) {
+    setFeedback("");
+    setActiveManualRegistrationId(registrationId);
+
+    startTransition(async () => {
+      try {
+        const result = await reportShiftAttendanceManually(shiftId, registrationId);
+        applyAttendanceUpdate(result.attendance);
+        setFeedback(result.message);
+      } catch (error) {
+        setFeedback(
+          error instanceof Error ? error.message : "הזנת הנוכחות הידנית נכשלה.",
+        );
+      } finally {
+        setActiveManualRegistrationId(null);
+      }
+    });
+  }
+
   return (
     <div className="space-y-8">
       <section className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
@@ -461,6 +512,11 @@ export function ShiftAttendanceClient({
                     <p className="mt-2 text-sm leading-6 text-stone-600">
                       {state.description}
                     </p>
+                    {shift.myAttendance ? (
+                      <p className="mt-2 text-sm text-stone-500">
+                        {getAttendanceSourceLabel(shift.myAttendance)}
+                      </p>
+                    ) : null}
                     {shift.myAttendance?.reviewNote ? (
                       <p className="mt-2 text-sm text-stone-500">
                         הערת צוות: {shift.myAttendance.reviewNote}
@@ -495,10 +551,10 @@ export function ShiftAttendanceClient({
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
-                אישור צוות
+                נוכחות צוות
               </p>
               <h2 className="mt-2 text-2xl font-semibold text-stone-900">
-                אישור נוכחות לאחר סיום התורנות
+                דיווח ואישור נוכחות לצוות
               </h2>
             </div>
             <span className="rounded-full bg-white px-4 py-2 text-sm text-stone-700 shadow-sm">
@@ -508,7 +564,7 @@ export function ShiftAttendanceClient({
 
           {reviewShifts.length === 0 ? (
             <div className="rounded-[2rem] border border-dashed border-stone-300 bg-white px-6 py-10 text-sm text-stone-600 shadow-sm">
-              אין כרגע תורנויות שהסתיימו ומחכות לבדיקת נוכחות.
+              אין כרגע תורנויות שחלון נוכחות הצוות שלהן כבר נפתח.
             </div>
           ) : (
             <div className="space-y-5">
@@ -546,7 +602,9 @@ export function ShiftAttendanceClient({
                           {shift.title}
                         </h3>
                         <p className="mt-2 text-sm text-stone-600">
-                          הסתיימה ב-{formatDateTime(shift.endTime)}
+                          {new Date(shift.endTime).getTime() >= now
+                            ? `פעילה עד ${formatDateTime(shift.endTime)}`
+                            : `הסתיימה ב-${formatDateTime(shift.endTime)}`}
                         </p>
                         {shift.location ? (
                           <p className="text-sm text-stone-500">{shift.location}</p>
@@ -579,6 +637,11 @@ export function ShiftAttendanceClient({
                                     ? `דיווח נשלח ב-${formatDateTime(attendance.reportedAt)}`
                                     : "לא התקבל דיווח נוכחות מהמשתמש"}
                                 </p>
+                                {attendance ? (
+                                  <p className="mt-2 text-sm text-stone-500">
+                                    {getAttendanceSourceLabel(attendance)}
+                                  </p>
+                                ) : null}
                                 {attendance?.reviewNote ? (
                                   <p className="mt-2 text-sm text-stone-500">
                                     הערת צוות: {attendance.reviewNote}
@@ -633,6 +696,28 @@ export function ShiftAttendanceClient({
                                       דחה דיווח
                                     </button>
                                   </>
+                                ) : null}
+
+                                {!attendance ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleManualAttendance(
+                                        shift.id,
+                                        registration.id,
+                                      )
+                                    }
+                                    disabled={
+                                      isPending &&
+                                      activeManualRegistrationId === registration.id
+                                    }
+                                    className="rounded-2xl bg-sky-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-sky-300"
+                                  >
+                                    {isPending &&
+                                    activeManualRegistrationId === registration.id
+                                      ? "שומר..."
+                                      : "דווח נוכחות ידנית"}
+                                  </button>
                                 ) : null}
                               </div>
                             </div>

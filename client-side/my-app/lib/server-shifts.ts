@@ -193,6 +193,20 @@ export async function reportShiftAttendanceForUser(
   );
 }
 
+export async function reportShiftAttendanceManuallyForUser(
+  userId: string,
+  shiftId: string,
+  registrationId: string,
+) {
+  return backendShiftsFetch<{ message: string; attendance: ShiftAttendance }>(
+    userId,
+    `/shifts/${shiftId}/registrations/${registrationId}/attendance/manual`,
+    {
+      method: "POST",
+    },
+  );
+}
+
 export async function confirmShiftRegistrationForUser(
   userId: string,
   shiftId: string,
