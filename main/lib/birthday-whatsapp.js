@@ -273,6 +273,10 @@ async function sendBirthdayAnnouncementsForDate({
 
   for (const birthdayUser of birthdayUsers) {
     for (const recipientUser of recipients) {
+      if (recipientUser.id === birthdayUser.id) {
+        continue;
+      }
+
       summary.attempted += 1;
 
       try {
