@@ -1,5 +1,7 @@
 import {
   CreateShiftPayload,
+  ShiftAttendance,
+  ShiftAttendanceDashboardResponse,
   ShiftAssignmentTypesByUserId,
   MyRegisteredShiftsResponse,
   ReplaceShiftAssignmentsResponse,
@@ -11,6 +13,7 @@ import {
   UpdateShiftSwapVolunteerOfferPayload,
   UpdateShiftSwapRequestPayload,
   UpdateRegistrationPayload,
+  UpdateAttendancePayload,
   UpdateShiftPayload,
   WeekShiftsResponse,
 } from "@/lib/shifts";
@@ -87,6 +90,13 @@ export async function fetchWeekShiftsForUser(userId: string, start: string) {
 
 export async function fetchMyRegisteredShiftsForUser(userId: string) {
   return backendShiftsFetch<MyRegisteredShiftsResponse>(userId, "/shifts/mine");
+}
+
+export async function fetchShiftAttendanceDashboardForUser(userId: string) {
+  return backendShiftsFetch<ShiftAttendanceDashboardResponse>(
+    userId,
+    "/shifts/attendance",
+  );
 }
 
 export async function fetchShiftSwapRequestsForUser(userId: string) {
@@ -170,6 +180,19 @@ export async function registerForShiftForUser(userId: string, shiftId: string) {
   );
 }
 
+export async function reportShiftAttendanceForUser(
+  userId: string,
+  shiftId: string,
+) {
+  return backendShiftsFetch<{ message: string; attendance: ShiftAttendance }>(
+    userId,
+    `/shifts/${shiftId}/attendance`,
+    {
+      method: "POST",
+    },
+  );
+}
+
 export async function confirmShiftRegistrationForUser(
   userId: string,
   shiftId: string,
@@ -194,6 +217,23 @@ async function updateRegistrationForUser(
   return backendShiftsFetch<{ message: string; registration: ShiftRegistration }>(
     userId,
     `/shifts/${shiftId}/registrations/${registrationId}/${action}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+async function updateAttendanceForUser(
+  userId: string,
+  shiftId: string,
+  attendanceId: string,
+  action: "approve" | "reject",
+  payload: UpdateAttendancePayload,
+) {
+  return backendShiftsFetch<{ message: string; attendance: ShiftAttendance }>(
+    userId,
+    `/shifts/${shiftId}/attendance/${attendanceId}/${action}`,
     {
       method: "PATCH",
       body: JSON.stringify(payload),
@@ -242,6 +282,36 @@ export async function cancelShiftRegistrationForUser(
     shiftId,
     registrationId,
     "cancel",
+    payload,
+  );
+}
+
+export async function approveShiftAttendanceForUser(
+  userId: string,
+  shiftId: string,
+  attendanceId: string,
+  payload: UpdateAttendancePayload,
+) {
+  return updateAttendanceForUser(
+    userId,
+    shiftId,
+    attendanceId,
+    "approve",
+    payload,
+  );
+}
+
+export async function rejectShiftAttendanceForUser(
+  userId: string,
+  shiftId: string,
+  attendanceId: string,
+  payload: UpdateAttendancePayload,
+) {
+  return updateAttendanceForUser(
+    userId,
+    shiftId,
+    attendanceId,
+    "reject",
     payload,
   );
 }

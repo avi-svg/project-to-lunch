@@ -7,6 +7,7 @@ router.use(shiftsController.requireActor);
 
 router.get('/week', shiftsController.listWeekShifts);
 router.get('/mine', shiftsController.listMyRegisteredShifts);
+router.get('/attendance', shiftsController.listShiftAttendance);
 router.get('/swap-requests', shiftsController.listSwapRequests);
 router.patch(
   '/swap-requests/:requestId',
@@ -27,6 +28,15 @@ router.post('/', shiftsController.createShift);
 router.patch('/:id', shiftsController.updateShift);
 router.put('/:id/assignments', shiftsController.replaceShiftAssignments);
 router.post('/:id/register', shiftsController.registerForShift);
+router.post('/:id/attendance', shiftsController.reportAttendance);
+router.patch(
+  '/:id/attendance/:attendanceId/approve',
+  shiftsController.approveAttendance
+);
+router.patch(
+  '/:id/attendance/:attendanceId/reject',
+  shiftsController.rejectAttendance
+);
 router.patch(
   '/:id/registrations/:registrationId/confirm',
   shiftsController.confirmOwnRegistration

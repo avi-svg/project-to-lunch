@@ -22,6 +22,7 @@ export type ShiftSwapVolunteerOfferStatus =
   | "approved"
   | "rejected"
   | "cancelled";
+export type ShiftAttendanceStatus = "pending" | "approved" | "rejected";
 
 export type ShiftAssignmentPoolUser = {
   id: string;
@@ -50,6 +51,22 @@ export type ShiftRegistration = {
   reviewedAt: string | null;
   reviewNote: string | null;
   user: ShiftActor;
+  reviewedBy: Omit<ShiftActor, "role"> | null;
+  attendance: ShiftAttendance | null;
+};
+
+export type ShiftAttendance = {
+  id: string;
+  shiftId: string;
+  registrationId: string;
+  userId: string;
+  status: ShiftAttendanceStatus;
+  reportedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  user: ShiftActor | null;
   reviewedBy: Omit<ShiftActor, "role"> | null;
 };
 
@@ -89,6 +106,9 @@ export type Shift = {
   createdBy: ShiftActor;
   reservedSlots: number;
   availableSlots: number;
+  attendanceWindowStartsAt: string | null;
+  attendanceWindowEndsAt: string | null;
+  canReportAttendance: boolean;
   myRegistration: {
     id: string;
     status: ShiftRegistrationStatus;
@@ -96,6 +116,7 @@ export type Shift = {
     reviewedAt: string | null;
     reviewNote: string | null;
   } | null;
+  myAttendance: ShiftAttendance | null;
   registrations?: ShiftRegistration[];
 };
 
@@ -155,6 +176,11 @@ export type ShiftSwapRequestsResponse = {
   requests: ShiftSwapRequest[];
 };
 
+export type ShiftAttendanceDashboardResponse = {
+  myShifts: Shift[];
+  reviewShifts: Shift[];
+};
+
 export type ReplaceShiftAssignmentsResponse = {
   message: string;
   shift: Shift;
@@ -188,6 +214,10 @@ export type UpdateShiftPayload = Partial<CreateShiftPayload> & {
 };
 
 export type UpdateRegistrationPayload = {
+  reviewNote?: string;
+};
+
+export type UpdateAttendancePayload = {
   reviewNote?: string;
 };
 
@@ -345,6 +375,52 @@ export async function cancelShiftRegistration(
 
 export async function getShiftSwapRequests() {
   return internalApiFetch<ShiftSwapRequestsResponse>("/api/shifts/swap-requests");
+}
+
+export async function getShiftAttendanceDashboard() {
+  return internalApiFetch<ShiftAttendanceDashboardResponse>(
+    "/api/shifts/attendance",
+  );
+}
+
+export async function reportShiftAttendance(shiftId: string) {
+  return internalApiFetch<{ message: string; attendance: ShiftAttendance }>(
+    `/api/shifts/${shiftId}/attendance`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+async function updateShiftAttendance(
+  shiftId: string,
+  attendanceId: string,
+  action: "approve" | "reject",
+  payload: UpdateAttendancePayload = {},
+) {
+  return internalApiFetch<{ message: string; attendance: ShiftAttendance }>(
+    `/api/shifts/${shiftId}/attendance/${attendanceId}/${action}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function approveShiftAttendance(
+  shiftId: string,
+  attendanceId: string,
+  payload: UpdateAttendancePayload = {},
+) {
+  return updateShiftAttendance(shiftId, attendanceId, "approve", payload);
+}
+
+export async function rejectShiftAttendance(
+  shiftId: string,
+  attendanceId: string,
+  payload: UpdateAttendancePayload = {},
+) {
+  return updateShiftAttendance(shiftId, attendanceId, "reject", payload);
 }
 
 export async function createShiftSwapRequest(

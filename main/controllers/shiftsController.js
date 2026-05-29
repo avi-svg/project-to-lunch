@@ -21,6 +21,7 @@ const registrationStatuses = new Set([
   'rejected',
   'cancelled',
 ]);
+const attendanceStatuses = new Set(['pending', 'approved', 'rejected']);
 const swapRequestStatuses = new Set([
   'pending',
   'approved',
@@ -62,6 +63,7 @@ const SHIFT_ASSIGNMENT_TEMPLATE_NAME =
   'shifts';
 const SHIFT_ASSIGNMENT_TEMPLATE_LANGUAGE_CODE =
   process.env.WHATSAPP_SHIFT_ASSIGNMENT_TEMPLATE_LANGUAGE_CODE || 'he';
+const ATTENDANCE_REPORT_WINDOW_MINUTES = 5;
 
 function isValidDate(value) {
   return !Number.isNaN(new Date(value).getTime());
@@ -259,7 +261,56 @@ function endOfMonthUtc(monthStart) {
   return createUtcDateForDisplayMidnight(nextMonthYear, nextMonth, 1);
 }
 
+function getAttendanceWindowStartTime(startTime) {
+  const windowStart = new Date(startTime);
+  windowStart.setMinutes(
+    windowStart.getMinutes() - ATTENDANCE_REPORT_WINDOW_MINUTES
+  );
+  return windowStart;
+}
+
+function getAttendanceWindow(shift) {
+  if (!shift?.start_time || !shift?.end_time) {
+    return {
+      startsAt: null,
+      endsAt: null,
+    };
+  }
+
+  return {
+    startsAt: getAttendanceWindowStartTime(shift.start_time).toISOString(),
+    endsAt: new Date(shift.end_time).toISOString(),
+  };
+}
+
+function canReportAttendanceForShift(shift, attendance) {
+  if (!shift?.start_time || !shift?.end_time || !shift?.my_registration_id) {
+    return false;
+  }
+
+  if (shift.my_registration_status !== 'approved') {
+    return false;
+  }
+
+  if (attendance) {
+    return false;
+  }
+
+  if (shift.status === 'cancelled') {
+    return false;
+  }
+
+  const now = Date.now();
+  const windowStart = getAttendanceWindowStartTime(shift.start_time).getTime();
+  const windowEnd = new Date(shift.end_time).getTime();
+
+  return now >= windowStart && now <= windowEnd;
+}
+
 function formatShiftRow(row) {
+  const myAttendance = row.attendance_id ? formatAttendanceRow(row) : null;
+  const attendanceWindow = getAttendanceWindow(row);
+
   return {
     id: row.id,
     title: row.title,
@@ -285,6 +336,9 @@ function formatShiftRow(row) {
     },
     reservedSlots: Number(row.reserved_slots || 0),
     availableSlots: Number(row.available_slots || 0),
+    attendanceWindowStartsAt: attendanceWindow.startsAt,
+    attendanceWindowEndsAt: attendanceWindow.endsAt,
+    canReportAttendance: canReportAttendanceForShift(row, myAttendance),
     myRegistration: row.my_registration_id
       ? {
           id: row.my_registration_id,
@@ -294,6 +348,7 @@ function formatShiftRow(row) {
           reviewNote: row.my_registration_review_note,
         }
       : null,
+    myAttendance,
   };
 }
 
@@ -318,6 +373,37 @@ function formatRegistrationRow(row) {
           id: row.reviewed_by_user_id,
           name: row.reviewed_by_name,
           email: row.reviewed_by_email,
+        }
+      : null,
+    attendance: row.attendance_id ? formatAttendanceRow(row) : null,
+  };
+}
+
+function formatAttendanceRow(row) {
+  return {
+    id: row.attendance_id,
+    shiftId: row.attendance_shift_id,
+    registrationId: row.attendance_registration_id,
+    userId: row.attendance_user_id,
+    status: row.attendance_status,
+    reportedAt: row.attendance_reported_at,
+    createdAt: row.attendance_created_at,
+    updatedAt: row.attendance_updated_at,
+    reviewedAt: row.attendance_reviewed_at,
+    reviewNote: row.attendance_review_note,
+    user: row.attendance_user_id
+      ? {
+          id: row.attendance_user_id,
+          name: row.attendance_user_name ?? row.user_name ?? null,
+          email: row.attendance_user_email ?? row.user_email ?? null,
+          role: normalizeRole(row.attendance_user_role ?? row.user_role),
+        }
+      : null,
+    reviewedBy: row.attendance_reviewed_by_user_id
+      ? {
+          id: row.attendance_reviewed_by_user_id,
+          name: row.attendance_reviewed_by_name,
+          email: row.attendance_reviewed_by_email,
         }
       : null,
   };
@@ -561,12 +647,34 @@ async function loadShiftRegistrations(shiftId, client = db) {
        u.email AS user_email,
        u.role AS user_role,
        reviewer.name AS reviewed_by_name,
-       reviewer.email AS reviewed_by_email
+       reviewer.email AS reviewed_by_email,
+       att.id AS attendance_id,
+       att.shift_id AS attendance_shift_id,
+       att.registration_id AS attendance_registration_id,
+       att.user_id AS attendance_user_id,
+       att.status AS attendance_status,
+       att.reported_at AS attendance_reported_at,
+       att.created_at AS attendance_created_at,
+       att.updated_at AS attendance_updated_at,
+       att.reviewed_at AS attendance_reviewed_at,
+       att.reviewed_by_user_id AS attendance_reviewed_by_user_id,
+       att.review_note AS attendance_review_note,
+       attendance_user.name AS attendance_user_name,
+       attendance_user.email AS attendance_user_email,
+       attendance_user.role AS attendance_user_role,
+       attendance_reviewer.name AS attendance_reviewed_by_name,
+       attendance_reviewer.email AS attendance_reviewed_by_email
      FROM public.shift_registrations sr
      JOIN public.users u
        ON u.id = sr.user_id
      LEFT JOIN public.users reviewer
        ON reviewer.id = sr.reviewed_by_user_id
+     LEFT JOIN public.shift_attendance att
+       ON att.registration_id = sr.id
+     LEFT JOIN public.users attendance_user
+       ON attendance_user.id = att.user_id
+     LEFT JOIN public.users attendance_reviewer
+       ON attendance_reviewer.id = att.reviewed_by_user_id
      WHERE sr.shift_id = $1
      ORDER BY sr.created_at ASC`,
     [shiftId]
@@ -595,6 +703,38 @@ async function loadFormattedRegistrationById(registrationId, client = db) {
   );
 
   return result.rows.length > 0 ? formatRegistrationRow(result.rows[0]) : null;
+}
+
+async function loadFormattedAttendanceById(attendanceId, client = db) {
+  const result = await client.query(
+    `SELECT
+       att.id AS attendance_id,
+       att.shift_id AS attendance_shift_id,
+       att.registration_id AS attendance_registration_id,
+       att.user_id AS attendance_user_id,
+       att.status AS attendance_status,
+       att.reported_at AS attendance_reported_at,
+       att.created_at AS attendance_created_at,
+       att.updated_at AS attendance_updated_at,
+       att.reviewed_at AS attendance_reviewed_at,
+       att.reviewed_by_user_id AS attendance_reviewed_by_user_id,
+       att.review_note AS attendance_review_note,
+       attendance_user.name AS attendance_user_name,
+       attendance_user.email AS attendance_user_email,
+       attendance_user.role AS attendance_user_role,
+       attendance_reviewer.name AS attendance_reviewed_by_name,
+       attendance_reviewer.email AS attendance_reviewed_by_email
+     FROM public.shift_attendance att
+     JOIN public.users attendance_user
+       ON attendance_user.id = att.user_id
+     LEFT JOIN public.users attendance_reviewer
+       ON attendance_reviewer.id = att.reviewed_by_user_id
+     WHERE att.id = $1
+     LIMIT 1`,
+    [attendanceId]
+  );
+
+  return result.rows.length > 0 ? formatAttendanceRow(result.rows[0]) : null;
 }
 
 async function loadSwapVolunteerOffersByRequestIds(requestIds, client = db) {
@@ -826,6 +966,131 @@ async function listMyRegisteredShifts(req, res, next) {
 
     return res.json({
       shifts: result.rows.map(formatShiftRow),
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function listShiftAttendance(req, res, next) {
+  try {
+    const myShiftsResult = await db.query(
+      `SELECT
+         s.*,
+         creator.name AS created_by_name,
+         creator.email AS created_by_email,
+         creator.role AS created_by_role,
+         COALESCE(capacity.reserved_slots, 0) AS reserved_slots,
+         COALESCE(capacity.available_slots, s.capacity) AS available_slots,
+         my_reg.id AS my_registration_id,
+         my_reg.status AS my_registration_status,
+         my_reg.created_at AS my_registration_created_at,
+         my_reg.reviewed_at AS my_registration_reviewed_at,
+         my_reg.review_note AS my_registration_review_note,
+         att.id AS attendance_id,
+         att.shift_id AS attendance_shift_id,
+         att.registration_id AS attendance_registration_id,
+         att.user_id AS attendance_user_id,
+         att.status AS attendance_status,
+         att.reported_at AS attendance_reported_at,
+         att.created_at AS attendance_created_at,
+         att.updated_at AS attendance_updated_at,
+         att.reviewed_at AS attendance_reviewed_at,
+         att.reviewed_by_user_id AS attendance_reviewed_by_user_id,
+         att.review_note AS attendance_review_note,
+         attendance_user.name AS attendance_user_name,
+         attendance_user.email AS attendance_user_email,
+         attendance_user.role AS attendance_user_role,
+         attendance_reviewer.name AS attendance_reviewed_by_name,
+         attendance_reviewer.email AS attendance_reviewed_by_email
+       FROM public.shifts s
+       JOIN public.users creator
+         ON creator.id = s.created_by_user_id
+       JOIN public.shift_registrations my_reg
+         ON my_reg.shift_id = s.id
+        AND my_reg.user_id = $1
+        AND my_reg.status = 'approved'
+       LEFT JOIN public.shift_capacity_summary capacity
+         ON capacity.shift_id = s.id
+       LEFT JOIN public.shift_attendance att
+         ON att.registration_id = my_reg.id
+       LEFT JOIN public.users attendance_user
+         ON attendance_user.id = att.user_id
+       LEFT JOIN public.users attendance_reviewer
+         ON attendance_reviewer.id = att.reviewed_by_user_id
+       WHERE s.status <> 'cancelled'
+       ORDER BY s.start_time ASC, s.created_at ASC`,
+      [req.actor.id]
+    );
+
+    let reviewShifts = [];
+
+    if (isStaffLike(req.actor.role)) {
+      const reviewShiftResult = await db.query(
+        `SELECT DISTINCT
+           s.*,
+           creator.name AS created_by_name,
+           creator.email AS created_by_email,
+           creator.role AS created_by_role,
+           COALESCE(capacity.reserved_slots, 0) AS reserved_slots,
+           COALESCE(capacity.available_slots, s.capacity) AS available_slots,
+           my_reg.id AS my_registration_id,
+           my_reg.status AS my_registration_status,
+           my_reg.created_at AS my_registration_created_at,
+           my_reg.reviewed_at AS my_registration_reviewed_at,
+           my_reg.review_note AS my_registration_review_note,
+           my_att.id AS attendance_id,
+           my_att.shift_id AS attendance_shift_id,
+           my_att.registration_id AS attendance_registration_id,
+           my_att.user_id AS attendance_user_id,
+           my_att.status AS attendance_status,
+           my_att.reported_at AS attendance_reported_at,
+           my_att.created_at AS attendance_created_at,
+           my_att.updated_at AS attendance_updated_at,
+           my_att.reviewed_at AS attendance_reviewed_at,
+           my_att.reviewed_by_user_id AS attendance_reviewed_by_user_id,
+           my_att.review_note AS attendance_review_note,
+           attendance_user.name AS attendance_user_name,
+           attendance_user.email AS attendance_user_email,
+           attendance_user.role AS attendance_user_role,
+           attendance_reviewer.name AS attendance_reviewed_by_name,
+           attendance_reviewer.email AS attendance_reviewed_by_email
+         FROM public.shifts s
+         JOIN public.users creator
+           ON creator.id = s.created_by_user_id
+         JOIN public.shift_registrations approved_reg
+           ON approved_reg.shift_id = s.id
+          AND approved_reg.status = 'approved'
+         LEFT JOIN public.shift_capacity_summary capacity
+           ON capacity.shift_id = s.id
+         LEFT JOIN public.shift_registrations my_reg
+           ON my_reg.shift_id = s.id
+          AND my_reg.user_id = $1
+         LEFT JOIN public.shift_attendance my_att
+           ON my_att.registration_id = my_reg.id
+         LEFT JOIN public.users attendance_user
+           ON attendance_user.id = my_att.user_id
+         LEFT JOIN public.users attendance_reviewer
+           ON attendance_reviewer.id = my_att.reviewed_by_user_id
+         WHERE s.end_time <= timezone('utc', now())
+           AND s.status <> 'cancelled'
+         ORDER BY s.start_time DESC, s.created_at DESC
+         LIMIT 30`,
+        [req.actor.id]
+      );
+
+      reviewShifts = await Promise.all(
+        reviewShiftResult.rows.map(async (row) => {
+          const shift = formatShiftRow(row);
+          shift.registrations = await loadShiftRegistrations(row.id);
+          return shift;
+        })
+      );
+    }
+
+    return res.json({
+      myShifts: myShiftsResult.rows.map(formatShiftRow),
+      reviewShifts,
     });
   } catch (error) {
     return next(error);
@@ -1694,6 +1959,128 @@ async function registerForShift(req, res, next) {
   }
 }
 
+async function reportAttendance(req, res, next) {
+  const { id } = req.params;
+
+  if (!isValidUuid(id)) {
+    return res.status(400).json({
+      message: 'Shift id must be a valid UUID.',
+    });
+  }
+
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const shiftResult = await client.query(
+      `SELECT *
+       FROM public.shifts
+       WHERE id = $1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (shiftResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        message: 'Shift not found.',
+      });
+    }
+
+    const shift = shiftResult.rows[0];
+
+    if (shift.status === 'cancelled') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'Attendance cannot be reported for a cancelled shift.',
+      });
+    }
+
+    const registrationResult = await client.query(
+      `SELECT *
+       FROM public.shift_registrations
+       WHERE shift_id = $1
+         AND user_id = $2
+       ORDER BY created_at DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [id, req.actor.id]
+    );
+
+    if (registrationResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        message: 'Only users assigned to this shift can report attendance.',
+      });
+    }
+
+    const registration = registrationResult.rows[0];
+
+    if (registration.status !== 'approved') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'Attendance can only be reported for approved shift assignments.',
+      });
+    }
+
+    const windowStart = getAttendanceWindowStartTime(shift.start_time).getTime();
+    const windowEnd = new Date(shift.end_time).getTime();
+    const now = Date.now();
+
+    if (now < windowStart || now > windowEnd) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message:
+          'Attendance can be reported from five minutes before the shift starts until the shift ends.',
+      });
+    }
+
+    const attendanceResult = await client.query(
+      `SELECT id
+       FROM public.shift_attendance
+       WHERE registration_id = $1
+       LIMIT 1
+       FOR UPDATE`,
+      [registration.id]
+    );
+
+    if (attendanceResult.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'Attendance for this shift has already been reported.',
+      });
+    }
+
+    const attendanceId = randomUUID();
+
+    await client.query(
+      `INSERT INTO public.shift_attendance (
+         id,
+         shift_id,
+         registration_id,
+         user_id,
+         status,
+         reported_at
+       )
+       VALUES ($1, $2, $3, $4, 'pending', timezone('utc', now()))`,
+      [attendanceId, id, registration.id, req.actor.id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({
+      message: 'Attendance reported successfully. Staff approval is pending.',
+      attendance: await loadFormattedAttendanceById(attendanceId),
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    return next(error);
+  } finally {
+    client.release();
+  }
+}
+
 async function replaceShiftAssignments(req, res, next) {
   const { id } = req.params;
   const {
@@ -2139,6 +2526,105 @@ async function confirmOwnRegistration(req, res, next) {
     return res.json({
       message: 'Registration confirmed successfully.',
       registration: formattedRegistration,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    return next(error);
+  } finally {
+    client.release();
+  }
+}
+
+async function updateAttendanceStatus(req, res, next, nextStatus) {
+  const { id, attendanceId } = req.params;
+  const { reviewNote } = req.body || {};
+  const normalizedReviewNote =
+    reviewNote === undefined || reviewNote === null
+      ? null
+      : String(reviewNote).trim() || null;
+
+  if (!isValidUuid(id) || !isValidUuid(attendanceId)) {
+    return res.status(400).json({
+      message: 'Shift id and attendance id must be valid UUIDs.',
+    });
+  }
+
+  if (!isStaffLike(req.actor.role)) {
+    return res.status(403).json({
+      message: 'Only staff users can review attendance.',
+    });
+  }
+
+  if (!attendanceStatuses.has(nextStatus)) {
+    return res.status(400).json({
+      message: 'Attendance status must be one of pending, approved, rejected.',
+    });
+  }
+
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const shiftResult = await client.query(
+      `SELECT *
+       FROM public.shifts
+       WHERE id = $1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (shiftResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        message: 'Shift not found.',
+      });
+    }
+
+    const shift = shiftResult.rows[0];
+
+    if (new Date(shift.end_time).getTime() > Date.now()) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'Attendance can only be reviewed after the shift has ended.',
+      });
+    }
+
+    const attendanceResult = await client.query(
+      `SELECT att.*
+       FROM public.shift_attendance att
+       WHERE att.id = $1
+         AND att.shift_id = $2
+       FOR UPDATE`,
+      [attendanceId, id]
+    );
+
+    if (attendanceResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        message: 'Attendance record not found.',
+      });
+    }
+
+    await client.query(
+      `UPDATE public.shift_attendance
+       SET status = $2,
+           updated_at = timezone('utc', now()),
+           reviewed_at = timezone('utc', now()),
+           reviewed_by_user_id = $3,
+           review_note = $4
+       WHERE id = $1`,
+      [attendanceId, nextStatus, req.actor.id, normalizedReviewNote]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json({
+      message:
+        nextStatus === 'approved'
+          ? 'Attendance approved successfully.'
+          : 'Attendance was rejected.',
+      attendance: await loadFormattedAttendanceById(attendanceId),
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -2724,7 +3210,16 @@ async function cancelRegistration(req, res, next) {
   return updateRegistrationStatus(req, res, next, 'cancelled');
 }
 
+async function approveAttendance(req, res, next) {
+  return updateAttendanceStatus(req, res, next, 'approved');
+}
+
+async function rejectAttendance(req, res, next) {
+  return updateAttendanceStatus(req, res, next, 'rejected');
+}
+
 module.exports = {
+  approveAttendance,
   approveRegistration,
   cancelRegistration,
   confirmOwnRegistration,
@@ -2732,12 +3227,15 @@ module.exports = {
   createSwapVolunteerOffer,
   createShift,
   getShiftById,
+  listShiftAttendance,
   listShiftAssignmentPools,
   listMyRegisteredShifts,
   listSwapRequests,
   listWeekShifts,
   replaceShiftAssignments,
+  reportAttendance,
   registerForShift,
+  rejectAttendance,
   rejectRegistration,
   requireActor,
   updateSwapVolunteerOfferStatus,

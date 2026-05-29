@@ -28,6 +28,7 @@ type QuickAction = {
 const navigationLinks: readonly NavigationLink[] = [
   { href: "/main-schedule", label: "לוח זמנים ראשי" },
   { href: "/birthdays", label: "ימי הולדת" },
+  { href: "/shift-attendance", label: "נוכחות בתורנות" },
   { href: "/manage-shifts", label: "תורנויות ופעילויות", staffOnly: true },
   { href: "/staff-shifts", label: "אזור משמרות צוות", staffOnly: true },
   { href: "/staff-zone", label: "אזור צוות", staffOnly: true },
@@ -52,6 +53,14 @@ const quickActions: readonly QuickAction[] = [
     description:
       "מסך ייעודי לבקשות החלפה: המשתמשים רואים את הבקשות הפעילות והצוות יכול לעקוב, לדחות או לסגור טיפול.",
     accent: "from-amber-700 via-orange-600 to-rose-500",
+  },
+  {
+    href: "/shift-attendance",
+    eyebrow: "נוכחות",
+    title: "דיווח ואישור תורנויות",
+    description:
+      "המשתמשים מדווחים על נוכחות החל מחמש דקות לפני תחילת התורנות ועד סיומה, והצוות מאשר את הרשימה לאחר מכן.",
+    accent: "from-sky-800 via-cyan-700 to-teal-500",
   },
   {
     href: "/manage-shifts",
