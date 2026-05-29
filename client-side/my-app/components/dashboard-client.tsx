@@ -27,6 +27,7 @@ type QuickAction = {
 
 const navigationLinks: readonly NavigationLink[] = [
   { href: "/manage-shifts", label: "תורנויות ופעילויות", staffOnly: true },
+  { href: "/my-shifts", label: "התורנויות שלי" },
   { href: "/main-schedule", label: "לוח זמנים ראשי" },
   { href: "/birthdays", label: "ימי הולדת" },
   { href: "/shift-attendance", label: "נוכחות בתורנויות" },
@@ -39,11 +40,11 @@ const navigationLinks: readonly NavigationLink[] = [
 
 const quickActions: readonly QuickAction[] = [
   {
-    href: "/personal-area",
+    href: "/my-shifts",
     eyebrow: "מעקב אישי",
     title: "התורנויות שלי",
     description:
-      "כניסה מהירה לאזור האישי כדי לאשר תורנויות, לעדכן פרטים ולפתוח בקשת החלפה במקרה הצורך.",
+      "כניסה מהירה לניהול האישי של התורנויות שלך, עם נוכחות, בקשות החלפה והערות חשובות.",
     accent: "from-stone-900 via-stone-800 to-stone-700",
   },
   {
@@ -85,7 +86,7 @@ function getQuickActions(userRole: UserRole) {
   const isStaffUser = userRole === "staff" || userRole === "admin";
 
   return quickActions.filter((action) => {
-    if (action.href === "/personal-area") {
+    if (action.href === "/my-shifts") {
       return !isStaffUser;
     }
 

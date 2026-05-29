@@ -1639,9 +1639,20 @@ async function getShiftById(req, res, next) {
       });
     }
 
-    const shift = formatShiftRow(result.rows[0]);
+    const shiftRow = result.rows[0];
 
-    if (isStaffLike(req.actor.role)) {
+    if (
+      !isStaffLike(req.actor.role) &&
+      !(await actorCanAccessShiftNotes(req.actor, id))
+    ) {
+      return res.status(403).json({
+        message: 'You do not have permission to view this shift.',
+      });
+    }
+
+    const shift = formatShiftRow(shiftRow);
+
+    if (isStaffLike(req.actor.role) || shift.myRegistration) {
       shift.registrations = await loadShiftRegistrations(id);
     }
 
