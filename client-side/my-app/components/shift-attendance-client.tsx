@@ -139,6 +139,81 @@ function replaceAttendanceInRegistrations(
   );
 }
 
+function getMyShiftPriority(shift: Shift, now: number) {
+  const state = getMyAttendanceState(shift, now);
+  const windowStart = getAttendanceWindowStart(shift).getTime();
+  const windowEnd = getAttendanceWindowEnd(shift).getTime();
+
+  if (state.canReport) {
+    return { bucket: 0, sortValue: windowEnd };
+  }
+
+  if (shift.myAttendance?.status === "pending") {
+    return {
+      bucket: 1,
+      sortValue: -new Date(shift.myAttendance.reportedAt).getTime(),
+    };
+  }
+
+  if (windowStart > now) {
+    return { bucket: 2, sortValue: windowStart };
+  }
+
+  if (!shift.myAttendance && windowEnd < now) {
+    return { bucket: 3, sortValue: -windowEnd };
+  }
+
+  return {
+    bucket: 4,
+    sortValue: shift.myAttendance
+      ? -new Date(shift.myAttendance.updatedAt).getTime()
+      : -windowEnd,
+  };
+}
+
+function getReviewShiftPriority(shift: Shift) {
+  const approvedRegistrations = (shift.registrations ?? []).filter(
+    (registration) => registration.status === "approved",
+  );
+  const pendingCount = approvedRegistrations.filter(
+    (registration) => registration.attendance?.status === "pending",
+  ).length;
+  const missingCount = approvedRegistrations.filter(
+    (registration) => registration.attendance === null,
+  ).length;
+
+  if (pendingCount > 0) {
+    return {
+      bucket: 0,
+      sortValue: -pendingCount * 10000000000000 + new Date(shift.endTime).getTime(),
+    };
+  }
+
+  if (missingCount > 0) {
+    return { bucket: 1, sortValue: -new Date(shift.endTime).getTime() };
+  }
+
+  return { bucket: 2, sortValue: -new Date(shift.endTime).getTime() };
+}
+
+function getReviewRegistrationPriority(registration: NonNullable<Shift["registrations"]>[number]) {
+  if (registration.attendance?.status === "pending") {
+    return {
+      bucket: 0,
+      sortValue: -new Date(registration.attendance.reportedAt).getTime(),
+    };
+  }
+
+  if (registration.attendance === null) {
+    return { bucket: 1, sortValue: 0 };
+  }
+
+  return {
+    bucket: 2,
+    sortValue: -new Date(registration.attendance.updatedAt).getTime(),
+  };
+}
+
 export function ShiftAttendanceClient({
   currentUserName,
   currentUserRole,
@@ -175,6 +250,44 @@ export function ShiftAttendanceClient({
           ).length,
         0,
       ),
+    [reviewShifts],
+  );
+
+  const prioritizedMyShifts = useMemo(
+    () =>
+      [...myShifts].sort((a, b) => {
+        const aPriority = getMyShiftPriority(a, now);
+        const bPriority = getMyShiftPriority(b, now);
+
+        if (aPriority.bucket !== bPriority.bucket) {
+          return aPriority.bucket - bPriority.bucket;
+        }
+
+        if (aPriority.sortValue !== bPriority.sortValue) {
+          return aPriority.sortValue - bPriority.sortValue;
+        }
+
+        return a.startTime.localeCompare(b.startTime);
+      }),
+    [myShifts, now],
+  );
+
+  const prioritizedReviewShifts = useMemo(
+    () =>
+      [...reviewShifts].sort((a, b) => {
+        const aPriority = getReviewShiftPriority(a);
+        const bPriority = getReviewShiftPriority(b);
+
+        if (aPriority.bucket !== bPriority.bucket) {
+          return aPriority.bucket - bPriority.bucket;
+        }
+
+        if (aPriority.sortValue !== bPriority.sortValue) {
+          return aPriority.sortValue - bPriority.sortValue;
+        }
+
+        return b.endTime.localeCompare(a.endTime);
+      }),
     [reviewShifts],
   );
 
@@ -300,14 +413,23 @@ export function ShiftAttendanceClient({
           </div>
         ) : (
           <div className="grid gap-5 lg:grid-cols-2">
-            {myShifts.map((shift) => {
+            {prioritizedMyShifts.map((shift, index) => {
               const state = getMyAttendanceState(shift, now);
 
               return (
                 <article
                   key={shift.id}
-                  className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm"
+                  className={`rounded-[2rem] border bg-white p-6 shadow-sm ${
+                    index === 0
+                      ? "border-stone-900 shadow-lg ring-1 ring-stone-200"
+                      : "border-stone-200"
+                  }`}
                 >
+                  {index === 0 ? (
+                    <div className="mb-4 inline-flex rounded-full bg-stone-900 px-3 py-2 text-xs font-semibold text-white">
+                      הכי רלוונטי עכשיו
+                    </div>
+                  ) : null}
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <h3 className="text-2xl font-semibold text-stone-900">
@@ -390,16 +512,34 @@ export function ShiftAttendanceClient({
             </div>
           ) : (
             <div className="space-y-5">
-              {reviewShifts.map((shift) => {
-                const approvedRegistrations = (shift.registrations ?? []).filter(
-                  (registration) => registration.status === "approved",
-                );
+              {prioritizedReviewShifts.map((shift, index) => {
+                const approvedRegistrations = (shift.registrations ?? [])
+                  .filter((registration) => registration.status === "approved")
+                  .sort((a, b) => {
+                    const aPriority = getReviewRegistrationPriority(a);
+                    const bPriority = getReviewRegistrationPriority(b);
+
+                    if (aPriority.bucket !== bPriority.bucket) {
+                      return aPriority.bucket - bPriority.bucket;
+                    }
+
+                    return aPriority.sortValue - bPriority.sortValue;
+                  });
 
                 return (
                   <section
                     key={shift.id}
-                    className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm"
+                    className={`rounded-[2rem] border bg-white p-6 shadow-sm ${
+                      index === 0
+                        ? "border-stone-900 shadow-lg ring-1 ring-stone-200"
+                        : "border-stone-200"
+                    }`}
                   >
+                    {index === 0 ? (
+                      <div className="mb-4 inline-flex rounded-full bg-stone-900 px-3 py-2 text-xs font-semibold text-white">
+                        הכי רלוונטי עכשיו
+                      </div>
+                    ) : null}
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>
                         <h3 className="text-2xl font-semibold text-stone-900">

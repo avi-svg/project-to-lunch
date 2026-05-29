@@ -77,6 +77,51 @@ function isCancellableOfferStatus(status: ShiftSwapVolunteerOfferStatus) {
   return status === "pending";
 }
 
+function getSwapRequestPriority(
+  request: ShiftSwapRequest,
+  currentUserId: string,
+  isStaffView: boolean,
+  section: "mine" | "board",
+  now: number,
+) {
+  const startTime = new Date(request.shift.startTime).getTime();
+  const endTime = new Date(request.shift.endTime).getTime();
+  const hasMyOffer = request.myVolunteerOffer !== null;
+
+  if (section === "mine") {
+    if (isActiveRequestStatus(request.status) && startTime > now) {
+      return { bucket: 0, sortValue: startTime };
+    }
+
+    if (isActiveRequestStatus(request.status) && startTime <= now && now <= endTime) {
+      return { bucket: 1, sortValue: endTime };
+    }
+
+    return {
+      bucket: 2,
+      sortValue: isActiveRequestStatus(request.status) ? startTime : -new Date(request.updatedAt).getTime(),
+    };
+  }
+
+  if (isStaffView && request.status === "pending") {
+    return { bucket: 0, sortValue: startTime };
+  }
+
+  if (request.status === "approved" && hasMyOffer && request.myVolunteerOffer?.status === "pending") {
+    return { bucket: 1, sortValue: startTime };
+  }
+
+  if (request.status === "approved" && request.requesterUserId !== currentUserId && startTime > now) {
+    return { bucket: 2, sortValue: startTime };
+  }
+
+  if (request.status === "approved" && request.requesterUserId !== currentUserId && startTime <= now && now <= endTime) {
+    return { bucket: 3, sortValue: endTime };
+  }
+
+  return { bucket: 4, sortValue: -new Date(request.updatedAt).getTime() };
+}
+
 export function ShiftSwapRequestsClient({
   currentUserId,
   currentUserRole,
@@ -91,6 +136,7 @@ export function ShiftSwapRequestsClient({
   const [actionMessage, setActionMessage] = useState("");
   const [actionError, setActionError] = useState(initialError);
   const [processingKey, setProcessingKey] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const isStaffView = currentUserRole === "staff" || currentUserRole === "admin";
 
   useEffect(() => {
@@ -99,22 +145,83 @@ export function ShiftSwapRequestsClient({
     }
   }, [controlledRequests]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 60000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
   const myRequests = useMemo(
-    () => requests.filter((request) => request.requesterUserId === currentUserId),
-    [currentUserId, requests],
+    () =>
+      requests
+        .filter((request) => request.requesterUserId === currentUserId)
+        .sort((a, b) => {
+          const aPriority = getSwapRequestPriority(
+            a,
+            currentUserId,
+            isStaffView,
+            "mine",
+            now,
+          );
+          const bPriority = getSwapRequestPriority(
+            b,
+            currentUserId,
+            isStaffView,
+            "mine",
+            now,
+          );
+
+          if (aPriority.bucket !== bPriority.bucket) {
+            return aPriority.bucket - bPriority.bucket;
+          }
+
+          if (aPriority.sortValue !== bPriority.sortValue) {
+            return aPriority.sortValue - bPriority.sortValue;
+          }
+
+          return b.createdAt.localeCompare(a.createdAt);
+        }),
+    [currentUserId, isStaffView, now, requests],
   );
 
   const boardRequests = useMemo(() => {
-    if (isStaffView) {
-      return requests;
-    }
+    const filtered = isStaffView
+      ? requests
+      : requests.filter(
+          (request) =>
+            request.requesterUserId !== currentUserId &&
+            (isActiveRequestStatus(request.status) || request.myVolunteerOffer !== null),
+        );
 
-    return requests.filter(
-      (request) =>
-        request.requesterUserId !== currentUserId &&
-        (isActiveRequestStatus(request.status) || request.myVolunteerOffer !== null),
-    );
-  }, [currentUserId, isStaffView, requests]);
+    return [...filtered].sort((a, b) => {
+      const aPriority = getSwapRequestPriority(
+        a,
+        currentUserId,
+        isStaffView,
+        "board",
+        now,
+      );
+      const bPriority = getSwapRequestPriority(
+        b,
+        currentUserId,
+        isStaffView,
+        "board",
+        now,
+      );
+
+      if (aPriority.bucket !== bPriority.bucket) {
+        return aPriority.bucket - bPriority.bucket;
+      }
+
+      if (aPriority.sortValue !== bPriority.sortValue) {
+        return aPriority.sortValue - bPriority.sortValue;
+      }
+
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+  }, [currentUserId, isStaffView, now, requests]);
 
   function applyRequestUpdate(nextRequest: ShiftSwapRequest, message: string) {
     setRequests((current) => {
@@ -270,7 +377,7 @@ export function ShiftSwapRequestsClient({
     );
   }
 
-  function renderRequestCard(request: ShiftSwapRequest) {
+  function renderRequestCard(request: ShiftSwapRequest, isTopPriority = false) {
     const isOwner = request.requesterUserId === currentUserId;
     const canCancelRequest = isOwner && isActiveRequestStatus(request.status);
     const canRejectRequest = isStaffView && request.status === "pending";
@@ -283,8 +390,17 @@ export function ShiftSwapRequestsClient({
     return (
       <article
         key={request.id}
-        className="rounded-3xl border border-stone-200 bg-stone-50 p-5"
+        className={`rounded-3xl border p-5 ${
+          isTopPriority
+            ? "border-stone-900 bg-white shadow-lg ring-1 ring-stone-200"
+            : "border-stone-200 bg-stone-50"
+        }`}
       >
+        {isTopPriority ? (
+          <div className="mb-4 inline-flex rounded-full bg-stone-900 px-3 py-2 text-xs font-semibold text-white">
+            הכי רלוונטי עכשיו
+          </div>
+        ) : null}
         {isOpenForVolunteers ? (
           <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
             {request.myVolunteerOffer
@@ -462,7 +578,7 @@ export function ShiftSwapRequestsClient({
               עדיין לא פתחת בקשת החלפה.
             </div>
           ) : (
-            myRequests.map(renderRequestCard)
+            myRequests.map((request, index) => renderRequestCard(request, index === 0))
           )}
         </div>
 
@@ -485,7 +601,7 @@ export function ShiftSwapRequestsClient({
                 : "אין כרגע בקשות החלפה פעילות להצגה."}
             </div>
           ) : (
-            boardRequests.map(renderRequestCard)
+            boardRequests.map((request, index) => renderRequestCard(request, index === 0))
           )}
         </div>
       </div>

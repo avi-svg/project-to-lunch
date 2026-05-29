@@ -2,6 +2,7 @@
 
 import {
   type FormEvent,
+  useEffect,
   useMemo,
   useState,
   useSyncExternalStore,
@@ -139,6 +140,45 @@ function formatShiftRegistrationStatus(status: ShiftRegistrationStatus) {
   return "ממתין לאישור שלך";
 }
 
+function getMeetingRequestPriority(request: MeetingRequest, now: number) {
+  const startTime = new Date(request.requestedStartTime).getTime();
+  const endTime = new Date(request.requestedEndTime).getTime();
+
+  if (request.status === "pending") {
+    return { bucket: 0, sortValue: startTime };
+  }
+
+  if (startTime <= now && now <= endTime) {
+    return { bucket: 1, sortValue: endTime };
+  }
+
+  if (startTime > now) {
+    return { bucket: 2, sortValue: startTime };
+  }
+
+  return { bucket: 3, sortValue: -endTime };
+}
+
+function getRegisteredShiftPriority(shift: Shift, now: number) {
+  const startTime = new Date(shift.startTime).getTime();
+  const endTime = new Date(shift.endTime).getTime();
+  const status = shift.myRegistration?.status;
+
+  if (status === "pending") {
+    return { bucket: 0, sortValue: startTime };
+  }
+
+  if (startTime <= now && now <= endTime) {
+    return { bucket: 1, sortValue: endTime };
+  }
+
+  if (startTime > now) {
+    return { bucket: 2, sortValue: startTime };
+  }
+
+  return { bucket: 3, sortValue: -endTime };
+}
+
 async function parseResponse(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");
@@ -204,6 +244,15 @@ export function PersonalAreaClient({
     null,
   );
   const [isProfilePending, startProfileTransition] = useTransition();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 60000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   const isStaffView = currentUser.role === "staff" || currentUser.role === "admin";
   const assignedStaff = useMemo(
@@ -212,24 +261,59 @@ export function PersonalAreaClient({
   );
 
   const visibleRequests = useMemo(() => {
+    const sortRequests = (requests: MeetingRequest[]) =>
+      [...requests].sort((a, b) => {
+        const aPriority = getMeetingRequestPriority(a, now);
+        const bPriority = getMeetingRequestPriority(b, now);
+
+        if (aPriority.bucket !== bPriority.bucket) {
+          return aPriority.bucket - bPriority.bucket;
+        }
+
+        if (aPriority.sortValue !== bPriority.sortValue) {
+          return aPriority.sortValue - bPriority.sortValue;
+        }
+
+        return b.createdAt.localeCompare(a.createdAt);
+      });
+
     if (currentUser.role === "admin") {
-      return [...meetingRequests].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return sortRequests(meetingRequests);
     }
 
     if (assignedStaff) {
-      return meetingRequests
-        .filter((request) => request.staffMemberId === assignedStaff.id)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return sortRequests(
+        meetingRequests.filter((request) => request.staffMemberId === assignedStaff.id),
+      );
     }
 
     if (currentUser.role === "staff") {
-      return [...meetingRequests].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return sortRequests(meetingRequests);
     }
 
-    return meetingRequests
-      .filter((request) => request.requesterUserId === currentUser.id)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [assignedStaff, currentUser.id, currentUser.role, meetingRequests]);
+    return sortRequests(
+      meetingRequests.filter((request) => request.requesterUserId === currentUser.id),
+    );
+  }, [assignedStaff, currentUser.id, currentUser.role, meetingRequests, now]);
+
+  const prioritizedRegisteredShifts = useMemo(
+    () =>
+      [...registeredShifts].sort((a, b) => {
+        const aPriority = getRegisteredShiftPriority(a, now);
+        const bPriority = getRegisteredShiftPriority(b, now);
+
+        if (aPriority.bucket !== bPriority.bucket) {
+          return aPriority.bucket - bPriority.bucket;
+        }
+
+        if (aPriority.sortValue !== bPriority.sortValue) {
+          return aPriority.sortValue - bPriority.sortValue;
+        }
+
+        return a.startTime.localeCompare(b.startTime);
+      }),
+    [now, registeredShifts],
+  );
 
   const availableStaffSlots = useMemo(() => {
     if (!assignedStaff) {
@@ -705,7 +789,7 @@ export function PersonalAreaClient({
                   השתתפות או פתיחת בקשת החלפה.
                 </div>
               ) : (
-                registeredShifts.map((shift) => {
+                prioritizedRegisteredShifts.map((shift, index) => {
                   const myRegistration = shift.myRegistration;
                   const activeSwapRequest = activeSwapRequestsByShiftId.get(shift.id);
                   const isSwapFormOpen = openSwapShiftId === shift.id;
@@ -718,11 +802,18 @@ export function PersonalAreaClient({
                     <article
                       key={shift.id}
                       className={`rounded-3xl border p-5 ${
-                        myRegistration.status === "approved"
-                          ? "border-emerald-200 bg-emerald-50"
-                          : "border-stone-200 bg-stone-50"
+                        index === 0
+                          ? "border-stone-900 bg-white shadow-lg ring-1 ring-stone-200"
+                          : myRegistration.status === "approved"
+                            ? "border-emerald-200 bg-emerald-50"
+                            : "border-stone-200 bg-stone-50"
                       }`}
                     >
+                      {index === 0 ? (
+                        <div className="mb-4 inline-flex rounded-full bg-stone-900 px-3 py-2 text-xs font-semibold text-white">
+                          הכי רלוונטי עכשיו
+                        </div>
+                      ) : null}
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="space-y-2">
                           <p className="text-lg font-semibold text-stone-900">
@@ -875,14 +966,23 @@ export function PersonalAreaClient({
               עדיין אין בקשות להצגה באזור הזה.
             </div>
           ) : (
-            visibleRequests.map((request) => {
+            visibleRequests.map((request, index) => {
               const staffMember = getStaffMemberById(request.staffMemberId);
 
               return (
                 <article
                   key={request.id}
-                  className="rounded-3xl border border-stone-200 bg-stone-50 p-5"
+                  className={`rounded-3xl border p-5 ${
+                    index === 0
+                      ? "border-stone-900 bg-white shadow-lg ring-1 ring-stone-200"
+                      : "border-stone-200 bg-stone-50"
+                  }`}
                 >
+                  {index === 0 ? (
+                    <div className="mb-4 inline-flex rounded-full bg-stone-900 px-3 py-2 text-xs font-semibold text-white">
+                      הכי רלוונטי עכשיו
+                    </div>
+                  ) : null}
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-2">
                       <p className="text-lg font-semibold text-stone-900">
