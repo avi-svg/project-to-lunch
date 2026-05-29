@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   getShiftAssignmentPools,
   replaceShiftAssignments,
@@ -36,6 +36,13 @@ type AssignedUser = {
   registrationId: string | null;
   assignmentType: ShiftAssignmentRequestType;
 };
+
+const AUTO_SCROLL_EDGE_OFFSET = 96;
+const AUTO_SCROLL_STEP = 28;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("he-IL", {
@@ -121,7 +128,7 @@ function buildSuccessMessage(result: ReplaceShiftAssignmentsResponse) {
   if (summary) {
     if (summary.forced > 0 && summary.standard > 0) {
       messageParts.push(
-        `${summary.forced} משתמשים סומנו כמאולץ ויאושרו מיד, ו-${summary.standard} משתמשים סומנו כלא מאולץ ויקבלו בקשת אישור בוואטסאפ.`,
+        `${summary.forced} משתמשים סומנו כמאולץ ואושרו מיד, ו-${summary.standard} משתמשים סומנו כלא מאולץ ויקבלו בקשת אישור בוואטסאפ.`,
       );
     } else if (summary.forced > 0) {
       messageParts.push(
@@ -147,9 +154,7 @@ function buildSuccessMessage(result: ReplaceShiftAssignmentsResponse) {
   }
 
   if (notifications?.failed) {
-    messageParts.push(
-      `${notifications.failed} הודעות וואטסאפ נכשלו בשליחה.`,
-    );
+    messageParts.push(`${notifications.failed} הודעות וואטסאפ נכשלו בשליחה.`);
   }
 
   if (messageParts.length === 0) {
@@ -181,6 +186,11 @@ export function ShiftAssignmentClient({
     message: string;
   } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [draggingPayload, setDraggingPayload] = useState<DragPayload | null>(null);
+  const [assignedDropIndex, setAssignedDropIndex] = useState<number | null>(null);
+  const assignedListRef = useRef<HTMLDivElement | null>(null);
+  const defaultPoolListRef = useRef<HTMLDivElement | null>(null);
+  const secondaryPoolListRef = useRef<HTMLDivElement | null>(null);
 
   const assignedUserIds = useMemo(
     () => new Set(assignedUsers.map((user) => user.id)),
@@ -240,13 +250,66 @@ export function ShiftAssignmentClient({
   function handleDragStart(event: React.DragEvent<HTMLElement>, payload: DragPayload) {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("application/json", JSON.stringify(payload));
+    setDraggingPayload(payload);
   }
 
-  function assignUser(userId: string) {
-    if (assignedUsers.some((user) => user.id === userId) || assignedUsers.length >= shift.capacity) {
+  function clearDragState() {
+    setActiveDropZone(null);
+    setAssignedDropIndex(null);
+    setDraggingPayload(null);
+  }
+
+  function handleDragEnd() {
+    clearDragState();
+  }
+
+  function autoScrollForPointer(clientY: number) {
+    if (typeof window === "undefined") {
       return;
     }
 
+    if (clientY <= AUTO_SCROLL_EDGE_OFFSET) {
+      window.scrollBy(0, -AUTO_SCROLL_STEP);
+    } else if (window.innerHeight - clientY <= AUTO_SCROLL_EDGE_OFFSET) {
+      window.scrollBy(0, AUTO_SCROLL_STEP);
+    }
+
+    const scrollContainers = [
+      assignedListRef.current,
+      defaultPoolListRef.current,
+      secondaryPoolListRef.current,
+    ].filter((element): element is HTMLDivElement => Boolean(element));
+
+    for (const container of scrollContainers) {
+      if (container.scrollHeight <= container.clientHeight) {
+        continue;
+      }
+
+      const rect = container.getBoundingClientRect();
+
+      if (clientY < rect.top || clientY > rect.bottom) {
+        continue;
+      }
+
+      if (clientY - rect.top <= AUTO_SCROLL_EDGE_OFFSET) {
+        container.scrollTop -= AUTO_SCROLL_STEP;
+      } else if (rect.bottom - clientY <= AUTO_SCROLL_EDGE_OFFSET) {
+        container.scrollTop += AUTO_SCROLL_STEP;
+      }
+    }
+  }
+
+  function setAssignedDropIndexFromPointer(
+    event: React.DragEvent<HTMLElement>,
+    index: number,
+  ) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const isUpperHalf = event.clientY < rect.top + rect.height / 2;
+
+    setAssignedDropIndex(isUpperHalf ? index : index + 1);
+  }
+
+  function assignUser(userId: string, targetIndex = assignedUsers.length) {
     const nextUser = allPoolUsers.find((user) => user.id === userId);
 
     if (!nextUser) {
@@ -262,7 +325,44 @@ export function ShiftAssignmentClient({
       assignmentType: "standard",
     };
 
-    setAssignedUsers((current) => [...current, nextAssignedUser]);
+    setAssignedUsers((current) => {
+      if (current.some((user) => user.id === userId) || current.length >= shift.capacity) {
+        return current;
+      }
+
+      const nextAssignedUsers = [...current];
+      const insertionIndex = clamp(targetIndex, 0, nextAssignedUsers.length);
+
+      nextAssignedUsers.splice(insertionIndex, 0, nextAssignedUser);
+      return nextAssignedUsers;
+    });
+    setFeedback(null);
+  }
+
+  function moveAssignedUser(userId: string, targetIndex: number) {
+    setAssignedUsers((current) => {
+      const currentIndex = current.findIndex((user) => user.id === userId);
+
+      if (currentIndex === -1) {
+        return current;
+      }
+
+      let insertionIndex = clamp(targetIndex, 0, current.length);
+
+      if (currentIndex < insertionIndex) {
+        insertionIndex -= 1;
+      }
+
+      if (insertionIndex === currentIndex) {
+        return current;
+      }
+
+      const nextAssignedUsers = [...current];
+      const [movedUser] = nextAssignedUsers.splice(currentIndex, 1);
+
+      nextAssignedUsers.splice(insertionIndex, 0, movedUser);
+      return nextAssignedUsers;
+    });
     setFeedback(null);
   }
 
@@ -271,7 +371,7 @@ export function ShiftAssignmentClient({
       current.map((user) =>
         user.id !== userId || user.status === "approved"
           ? user
-          : { ...user, assignmentType }
+          : { ...user, assignmentType },
       ),
     );
     setFeedback(null);
@@ -329,20 +429,28 @@ export function ShiftAssignmentClient({
 
   function handleDropOnAssigned(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
-    setActiveDropZone(null);
-    const payload = readDragPayload(event);
+    const payload = readDragPayload(event) ?? draggingPayload;
+    const targetIndex = assignedDropIndex ?? assignedUsers.length;
 
-    if (!payload || payload.source !== "pool") {
+    clearDragState();
+
+    if (!payload) {
       return;
     }
 
-    assignUser(payload.userId);
+    if (payload.source === "pool") {
+      assignUser(payload.userId, targetIndex);
+      return;
+    }
+
+    moveAssignedUser(payload.userId, targetIndex);
   }
 
   function handleDropOnPool(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
-    setActiveDropZone(null);
-    const payload = readDragPayload(event);
+    const payload = readDragPayload(event) ?? draggingPayload;
+
+    clearDragState();
 
     if (!payload || payload.source !== "assigned") {
       return;
@@ -375,8 +483,14 @@ export function ShiftAssignmentClient({
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
             setActiveDropZone("assigned");
+            autoScrollForPointer(event.clientY);
+
+            const target = event.target as HTMLElement;
+
+            if (!target.closest("[data-assigned-card='true']")) {
+              setAssignedDropIndex(assignedUsers.length);
+            }
           }}
-          onDragLeave={() => setActiveDropZone((current) => (current === "assigned" ? null : current))}
           onDrop={handleDropOnAssigned}
           className={`rounded-[2rem] border-2 border-dashed bg-white p-6 shadow-sm transition ${
             activeDropZone === "assigned"
@@ -389,9 +503,7 @@ export function ShiftAssignmentClient({
               <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
                 התורנות הנבחרת
               </p>
-              <h2 className="mt-2 text-3xl font-semibold text-stone-900">
-                {shift.title}
-              </h2>
+              <h2 className="mt-2 text-3xl font-semibold text-stone-900">{shift.title}</h2>
               <p className="mt-3 text-sm text-stone-600">
                 {formatDateTime(shift.startTime)} עד {formatDateTime(shift.endTime)}
               </p>
@@ -428,7 +540,7 @@ export function ShiftAssignmentClient({
                   שמירה ועדכון המשתמשים
                 </button>
                 <span className="text-sm text-stone-600">
-                  לכל משתמש אפשר לבחור עכשיו בנפרד אם השיבוץ יהיה מאולץ או לא מאולץ.
+                  אפשר גם לגרור בתוך הרשימה כדי לשנות סדר לפני השמירה.
                 </span>
               </div>
             ) : null}
@@ -450,126 +562,179 @@ export function ShiftAssignmentClient({
                 גרור לכאן משתמשים מאחד המאגרים כדי לשייך אותם לתורנות.
               </div>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {assignedUsers.map((user) => {
-                  const isApproved = user.status === "approved";
+              <div className="space-y-3">
+                <p className="text-sm text-stone-600">
+                  אפשר לגרור משתמש מלמטה למעלה או להפך, והרשימה והעמוד יגללו אוטומטית
+                  כשמתקרבים לקצה.
+                </p>
 
-                  return (
-                    <article
-                      key={user.id}
-                      draggable={!isApproved}
-                      onDragStart={(event) => {
-                        if (isApproved) {
-                          event.preventDefault();
-                          setFeedback({
-                            variant: "error",
-                            message:
-                              "משתמש שכבר מאושר לתורנות נעול לשינוי במסך הזה ולא ניתן להסיר אותו ישירות.",
-                          });
-                          return;
-                        }
+                <div
+                  ref={assignedListRef}
+                  className="max-h-[70vh] space-y-4 overflow-y-auto pe-2"
+                >
+                  {assignedDropIndex === 0 && draggingPayload ? (
+                    <div className="h-1 rounded-full bg-stone-900/80" />
+                  ) : null}
 
-                        handleDragStart(event, { source: "assigned", userId: user.id });
-                      }}
-                      className={`rounded-3xl border border-stone-200 p-5 ${
-                        isApproved
-                          ? "cursor-not-allowed bg-emerald-50"
-                          : "cursor-grab bg-stone-50 active:cursor-grabbing"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
-                          <p className="text-lg font-semibold text-stone-900">
-                            {user.name ?? "ללא שם"}
-                          </p>
-                          <p className="text-sm text-stone-600">{user.email}</p>
-                          <p className="text-xs text-stone-500">ID: {user.id}</p>
-                        </div>
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  {assignedUsers.map((user, index) => {
+                    const isApproved = user.status === "approved";
+
+                    return (
+                      <div key={user.id} className="space-y-4">
+                        {assignedDropIndex === index + 1 && draggingPayload ? (
+                          <div className="h-1 rounded-full bg-stone-900/80" />
+                        ) : null}
+
+                        <article
+                          data-assigned-card="true"
+                          draggable={!isApproved}
+                          onDragStart={(event) => {
+                            if (isApproved) {
+                              event.preventDefault();
+                              setFeedback({
+                                variant: "error",
+                                message:
+                                  "משתמש שכבר מאושר לתורנות נעול לשינוי במסך הזה ולא ניתן להסיר אותו ישירות.",
+                              });
+                              return;
+                            }
+
+                            handleDragStart(event, {
+                              source: "assigned",
+                              userId: user.id,
+                            });
+                          }}
+                          onDragEnd={handleDragEnd}
+                          onDragOver={(event) => {
+                            event.preventDefault();
+                            event.dataTransfer.dropEffect = "move";
+                            setActiveDropZone("assigned");
+                            autoScrollForPointer(event.clientY);
+                            setAssignedDropIndexFromPointer(event, index);
+                          }}
+                          className={`rounded-3xl border border-stone-200 p-5 transition ${
                             isApproved
-                              ? "bg-emerald-100 text-emerald-900"
-                              : "bg-amber-100 text-amber-900"
+                              ? "cursor-not-allowed bg-emerald-50"
+                              : "cursor-grab bg-stone-50 active:cursor-grabbing"
+                          } ${
+                            draggingPayload?.source === "assigned" &&
+                            draggingPayload.userId === user.id
+                              ? "opacity-60"
+                              : ""
                           }`}
                         >
-                          {formatRegistrationStatus(user.status)}
-                        </span>
-                      </div>
-
-                      <div className="mt-4 rounded-3xl border border-stone-200 bg-white p-4">
-                        <p className="text-xs font-semibold tracking-[0.18em] text-stone-500">
-                          סוג שיבוץ למשתמש הזה
-                        </p>
-
-                        {isApproved ? (
-                          <div className="mt-3 space-y-2 text-sm text-stone-700">
-                            <p className="font-medium text-stone-900">מאולץ / מאושר כבר בפועל</p>
-                            <p>המשתמש כבר מאושר לתורנות ולכן לא ניתן לשנות עבורו את סוג השיבוץ כאן.</p>
-                          </div>
-                        ) : (
-                          <div className="mt-3 space-y-3">
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 p-3">
-                                <input
-                                  type="radio"
-                                  name={`assignment-type-${user.id}`}
-                                  value="standard"
-                                  checked={user.assignmentType === "standard"}
-                                  onChange={() => updateAssignedUserType(user.id, "standard")}
-                                  className="mt-1 h-4 w-4 accent-stone-900"
-                                />
-                                <div>
-                                  <p className="text-sm font-semibold text-stone-900">לא מאולץ</p>
-                                  <p className="text-sm text-stone-600">
-                                    תישלח בקשת אישור בוואטסאפ והשיבוץ ימתין לאישור.
-                                  </p>
-                                </div>
-                              </label>
-
-                              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 p-3">
-                                <input
-                                  type="radio"
-                                  name={`assignment-type-${user.id}`}
-                                  value="forced"
-                                  checked={user.assignmentType === "forced"}
-                                  onChange={() => updateAssignedUserType(user.id, "forced")}
-                                  className="mt-1 h-4 w-4 accent-stone-900"
-                                />
-                                <div>
-                                  <p className="text-sm font-semibold text-stone-900">מאולץ</p>
-                                  <p className="text-sm text-stone-600">
-                                    לא תישלח בקשת אישור בוואטסאפ והשיבוץ יאושר מיד בשמירה.
-                                  </p>
-                                </div>
-                              </label>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="text-lg font-semibold text-stone-900">
+                                {user.name ?? "ללא שם"}
+                              </p>
+                              <p className="text-sm text-stone-600">{user.email}</p>
+                              <p className="text-xs text-stone-500">ID: {user.id}</p>
                             </div>
-
-                            <p
-                              className={`text-sm ${
-                                user.assignmentType === "forced"
-                                  ? "text-emerald-700"
-                                  : "text-stone-600"
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                isApproved
+                                  ? "bg-emerald-100 text-emerald-900"
+                                  : "bg-amber-100 text-amber-900"
                               }`}
                             >
-                              {user.assignmentType === "forced"
-                                ? "בבחירה הנוכחית המשתמש יאושר מיד עם השמירה."
-                                : "בבחירה הנוכחית המשתמש יקבל בקשת אישור בוואטסאפ."}
-                            </p>
+                              {formatRegistrationStatus(user.status)}
+                            </span>
                           </div>
-                        )}
-                      </div>
 
-                      <button
-                        type="button"
-                        onClick={() => unassignUser(user.id)}
-                        disabled={isApproved}
-                        className="mt-4 rounded-2xl border border-stone-300 px-4 py-2 text-sm font-medium text-stone-900 transition hover:border-stone-900 disabled:cursor-not-allowed disabled:border-stone-200 disabled:text-stone-400"
-                      >
-                        החזר לרשימה
-                      </button>
-                    </article>
-                  );
-                })}
+                          <div className="mt-4 rounded-3xl border border-stone-200 bg-white p-4">
+                            <p className="text-xs font-semibold tracking-[0.18em] text-stone-500">
+                              סוג שיבוץ למשתמש הזה
+                            </p>
+
+                            {isApproved ? (
+                              <div className="mt-3 space-y-2 text-sm text-stone-700">
+                                <p className="font-medium text-stone-900">
+                                  מאולץ / מאושר כבר בפועל
+                                </p>
+                                <p>
+                                  המשתמש כבר מאושר לתורנות ולכן לא ניתן לשנות עבורו את סוג
+                                  השיבוץ כאן.
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="mt-3 space-y-3">
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 p-3">
+                                    <input
+                                      type="radio"
+                                      name={`assignment-type-${user.id}`}
+                                      value="standard"
+                                      checked={user.assignmentType === "standard"}
+                                      onChange={() =>
+                                        updateAssignedUserType(user.id, "standard")
+                                      }
+                                      className="mt-1 h-4 w-4 accent-stone-900"
+                                    />
+                                    <div>
+                                      <p className="text-sm font-semibold text-stone-900">
+                                        לא מאולץ
+                                      </p>
+                                      <p className="text-sm text-stone-600">
+                                        תישלח בקשת אישור בוואטסאפ והשיבוץ ימתין לאישור.
+                                      </p>
+                                    </div>
+                                  </label>
+
+                                  <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 p-3">
+                                    <input
+                                      type="radio"
+                                      name={`assignment-type-${user.id}`}
+                                      value="forced"
+                                      checked={user.assignmentType === "forced"}
+                                      onChange={() =>
+                                        updateAssignedUserType(user.id, "forced")
+                                      }
+                                      className="mt-1 h-4 w-4 accent-stone-900"
+                                    />
+                                    <div>
+                                      <p className="text-sm font-semibold text-stone-900">
+                                        מאולץ
+                                      </p>
+                                      <p className="text-sm text-stone-600">
+                                        לא תישלח בקשת אישור בוואטסאפ והשיבוץ יאושר מיד בשמירה.
+                                      </p>
+                                    </div>
+                                  </label>
+                                </div>
+
+                                <p
+                                  className={`text-sm ${
+                                    user.assignmentType === "forced"
+                                      ? "text-emerald-700"
+                                      : "text-stone-600"
+                                  }`}
+                                >
+                                  {user.assignmentType === "forced"
+                                    ? "בבחירה הנוכחית המשתמש יאושר מיד עם השמירה."
+                                    : "בבחירה הנוכחית המשתמש יקבל בקשת אישור בוואטסאפ."}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => unassignUser(user.id)}
+                            disabled={isApproved}
+                            className="mt-4 rounded-2xl border border-stone-300 px-4 py-2 text-sm font-medium text-stone-900 transition hover:border-stone-900 disabled:cursor-not-allowed disabled:border-stone-200 disabled:text-stone-400"
+                          >
+                            החזר לרשימה
+                          </button>
+                        </article>
+                      </div>
+                    );
+                  })}
+
+                  {assignedDropIndex === assignedUsers.length && draggingPayload ? (
+                    <div className="h-1 rounded-full bg-stone-900/80" />
+                  ) : null}
+                </div>
               </div>
             )}
           </div>
@@ -582,8 +747,8 @@ export function ShiftAssignmentClient({
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
             setActiveDropZone("pool");
+            autoScrollForPointer(event.clientY);
           }}
-          onDragLeave={() => setActiveDropZone((current) => (current === "pool" ? null : current))}
           onDrop={handleDropOnPool}
           className={`rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm transition ${
             activeDropZone === "pool" ? "border-stone-900 bg-stone-50" : ""
@@ -603,7 +768,10 @@ export function ShiftAssignmentClient({
             </span>
           </div>
 
-          <div className="mt-6 space-y-3">
+          <div
+            ref={defaultPoolListRef}
+            className="mt-6 max-h-[26rem] space-y-3 overflow-y-auto pe-2"
+          >
             {availableDefaultUsers.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-600">
                 אין כרגע משתמשים פנויים במאגר הראשי לתורנות הזו.
@@ -616,7 +784,12 @@ export function ShiftAssignmentClient({
                   onDragStart={(event) =>
                     handleDragStart(event, { source: "pool", userId: user.id })
                   }
-                  className="cursor-grab rounded-3xl border border-stone-200 bg-stone-50 p-4 active:cursor-grabbing"
+                  onDragEnd={handleDragEnd}
+                  className={`rounded-3xl border border-stone-200 bg-stone-50 p-4 ${
+                    draggingPayload?.source === "pool" && draggingPayload.userId === user.id
+                      ? "cursor-grabbing opacity-60"
+                      : "cursor-grab active:cursor-grabbing"
+                  }`}
                 >
                   <p className="text-base font-semibold text-stone-900">
                     {user.name ?? "ללא שם"}
@@ -634,8 +807,8 @@ export function ShiftAssignmentClient({
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
             setActiveDropZone("pool");
+            autoScrollForPointer(event.clientY);
           }}
-          onDragLeave={() => setActiveDropZone((current) => (current === "pool" ? null : current))}
           onDrop={handleDropOnPool}
           className={`rounded-[2rem] border border-amber-200 bg-amber-50/40 p-6 shadow-sm transition ${
             activeDropZone === "pool" ? "border-amber-400 bg-amber-50" : ""
@@ -658,7 +831,10 @@ export function ShiftAssignmentClient({
             </span>
           </div>
 
-          <div className="mt-6 space-y-3">
+          <div
+            ref={secondaryPoolListRef}
+            className="mt-6 max-h-[26rem] space-y-3 overflow-y-auto pe-2"
+          >
             {availableAlreadyAssignedUsers.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-amber-300 bg-white px-4 py-6 text-sm text-stone-600">
                 אין כרגע משתמשים שכבר שובצו החודש וממתינים כאן כאופציה נוספת.
@@ -671,7 +847,12 @@ export function ShiftAssignmentClient({
                   onDragStart={(event) =>
                     handleDragStart(event, { source: "pool", userId: user.id })
                   }
-                  className="cursor-grab rounded-3xl border border-amber-200 bg-white p-4 active:cursor-grabbing"
+                  onDragEnd={handleDragEnd}
+                  className={`rounded-3xl border border-amber-200 bg-white p-4 ${
+                    draggingPayload?.source === "pool" && draggingPayload.userId === user.id
+                      ? "cursor-grabbing opacity-60"
+                      : "cursor-grab active:cursor-grabbing"
+                  }`}
                 >
                   <p className="text-base font-semibold text-stone-900">
                     {user.name ?? "ללא שם"}
