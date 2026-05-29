@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
 import { deleteShift, type Shift, type ShiftRegistrationStatus } from "@/lib/shifts";
 
 type Props = {
   shift: Shift;
+  activeSwapRequestsCount: number;
 };
 
 function formatDateTime(value: string) {
@@ -19,7 +20,7 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatShiftStatus(status: Shift["status"]) {
+function formatStoredShiftStatus(status: Shift["status"]) {
   if (status === "open") {
     return "פתוחה";
   }
@@ -49,7 +50,7 @@ function formatShiftType(shiftType: Shift["shiftType"]) {
 
 function formatAssignmentMode(mode: Shift["assignmentMode"]) {
   if (mode === "assign-now") {
-    return "שיבוץ מיד לאחר יצירה";
+    return "שיבוץ מיידי לאחר יצירה";
   }
 
   if (mode === "assign-later") {
@@ -91,7 +92,110 @@ function getRegistrationTone(status: ShiftRegistrationStatus) {
   return "bg-stone-200 text-stone-700";
 }
 
-export function ManageShiftDetailClient({ shift }: Props) {
+function getShiftLifecycleStatus(shift: Shift, activeSwapRequestsCount: number) {
+  const now = Date.now();
+  const startTime = new Date(shift.startTime).getTime();
+  const endTime = new Date(shift.endTime).getTime();
+  const processStartTime = startTime - 15 * 60 * 1000;
+  const registrations = shift.registrations ?? [];
+  const activeRegistrations = registrations.filter(
+    (registration) =>
+      registration.status === "approved" || registration.status === "pending",
+  );
+  const approvedRegistrations = registrations.filter(
+    (registration) => registration.status === "approved",
+  );
+  const pendingRegistrations = registrations.filter(
+    (registration) => registration.status === "pending",
+  );
+  const pendingAttendanceCount = approvedRegistrations.filter(
+    (registration) => registration.attendance?.status === "pending",
+  ).length;
+  const missingAttendanceCount = approvedRegistrations.filter(
+    (registration) => registration.attendance === null,
+  ).length;
+  const completedAttendanceCount = approvedRegistrations.filter(
+    (registration) => registration.attendance?.status === "approved",
+  ).length;
+
+  if (now >= processStartTime && now <= endTime) {
+    return {
+      label: "בתהליך",
+      tone: "bg-sky-100 text-sky-900",
+      description: "מרבע שעה לפני תחילת התורנות ועד סיומה, התורנות נחשבת פעילה.",
+    };
+  }
+
+  if (now > endTime) {
+    if (pendingAttendanceCount === 0 && missingAttendanceCount === 0) {
+      return {
+        label: "הסתיימה והושלמה",
+        tone: "bg-emerald-100 text-emerald-900",
+        description:
+          completedAttendanceCount > 0
+            ? "כל דיווחי הנוכחות התקבלו ואושרו."
+            : "התורנות הסתיימה ואין דיווחי נוכחות פתוחים לטיפול.",
+      };
+    }
+
+    return {
+      label: "הסתיימה אך טרם הושלמה",
+      tone: "bg-amber-100 text-amber-900",
+      description: `נותרו ${pendingAttendanceCount} דיווחים ממתינים ו-${missingAttendanceCount} דיווחים חסרים.`,
+    };
+  }
+
+  if (activeRegistrations.length === 0 && activeSwapRequestsCount === 0) {
+    return {
+      label: "תורנות נוצרה",
+      tone: "bg-stone-200 text-stone-800",
+      description: "התורנות נשמרה במערכת ועדיין לא בוצעו עליה פעולות שיבוץ.",
+    };
+  }
+
+  if (activeSwapRequestsCount > 0) {
+    return {
+      label: "שובצה חלקית",
+      tone: "bg-amber-100 text-amber-900",
+      description: `יש ${activeSwapRequestsCount} בקשות החלפה פעילות שעדיין דורשות טיפול.`,
+    };
+  }
+
+  if (activeRegistrations.length < shift.capacity) {
+    return {
+      label: "שובצה חלקית",
+      tone: "bg-amber-100 text-amber-900",
+      description: `שובצו ${activeRegistrations.length} מתוך ${shift.capacity} מקומות.`,
+    };
+  }
+
+  if (pendingRegistrations.length === shift.capacity) {
+    return {
+      label: "שובצה וטרם אושרה",
+      tone: "bg-orange-100 text-orange-900",
+      description: "כל המקומות שובצו, אך כל השיבוצים עדיין ממתינים לאישור.",
+    };
+  }
+
+  if (approvedRegistrations.length === shift.capacity) {
+    return {
+      label: "שובצה ואושרה",
+      tone: "bg-emerald-100 text-emerald-900",
+      description: "כל המקומות שובצו ואושרו, ואין בקשות החלפה פתוחות.",
+    };
+  }
+
+  return {
+    label: "שובצה חלקית",
+    tone: "bg-amber-100 text-amber-900",
+    description: "יש שילוב של שיבוצים מאושרים וממתינים שעדיין דורש טיפול.",
+  };
+}
+
+export function ManageShiftDetailClient({
+  shift,
+  activeSwapRequestsCount,
+}: Props) {
   const router = useRouter();
   const activeRegistrations = useMemo(
     () =>
@@ -101,7 +205,6 @@ export function ManageShiftDetailClient({ shift }: Props) {
       ),
     [shift.registrations],
   );
-
   const archivedRegistrations = useMemo(
     () =>
       (shift.registrations ?? []).filter(
@@ -110,10 +213,19 @@ export function ManageShiftDetailClient({ shift }: Props) {
       ),
     [shift.registrations],
   );
-
+  const lifecycleStatus = useMemo(
+    () => getShiftLifecycleStatus(shift, activeSwapRequestsCount),
+    [activeSwapRequestsCount, shift],
+  );
   const hasPendingAssignments = activeRegistrations.some(
     (registration) => registration.status === "pending",
   );
+  const swapRequestsHref = `/shift-swap-requests?shiftId=${encodeURIComponent(
+    shift.id,
+  )}`;
+  const attendanceHref = `/shift-attendance?shiftId=${encodeURIComponent(
+    shift.id,
+  )}`;
   const [deleteConfirmationId, setDeleteConfirmationId] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [isDeleting, startDeleteTransition] = useTransition();
@@ -157,40 +269,76 @@ export function ManageShiftDetailClient({ shift }: Props) {
             </p>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight">{shift.title}</h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
-              כאן רואים את התורנים הנוכחיים, סטטוסי השיבוץ, פרטי התורנות וכל
-              הפעולות המהירות לניהול התורנות שבחרת.
+              כאן מנהלים את השיבוצים, בקשות ההחלפה, הנוכחות וסטטוס ההתקדמות של
+              התורנות שבחרת.
             </p>
           </div>
 
-          <div className="grid gap-4 border-t border-stone-200 bg-stone-50 p-6 md:grid-cols-3">
+          <div className="grid gap-4 border-t border-stone-200 bg-stone-50 p-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
             <div className="rounded-3xl bg-white p-5 shadow-sm">
-              <p className="text-sm text-stone-500">מועד</p>
+              <p className="text-sm text-stone-500">מועד התורנות</p>
               <p className="mt-2 text-lg font-semibold text-stone-900">
                 {formatDateTime(shift.startTime)}
               </p>
               <p className="mt-1 text-sm text-stone-600">
                 סיום: {formatDateTime(shift.endTime)}
               </p>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link
+                  href={`/manage-shifts/${shift.id}/assign`}
+                  className="inline-flex rounded-2xl bg-stone-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700"
+                >
+                  מעבר לשיבוץ תורנים
+                </Link>
+                <Link
+                  href={`/manage-shifts/${shift.id}/edit`}
+                  className="inline-flex rounded-2xl border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-900 transition hover:border-stone-900"
+                >
+                  עריכת פרטי התורנות
+                </Link>
+                <Link
+                  href={attendanceHref}
+                  className="inline-flex rounded-2xl border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-900 transition hover:border-stone-900"
+                >
+                  מעבר לדיווח נוכחות בתורנות
+                </Link>
+              </div>
             </div>
 
-            <div className="rounded-3xl bg-white p-5 shadow-sm">
-              <p className="text-sm text-stone-500">תפוסה</p>
-              <p className="mt-2 text-lg font-semibold text-stone-900">
-                {shift.reservedSlots} מתוך {shift.capacity}
-              </p>
-              <p className="mt-1 text-sm text-stone-600">
-                {shift.availableSlots} מקומות פנויים
-              </p>
-            </div>
+            <div className="grid gap-4">
+              <div className="rounded-3xl bg-white p-5 shadow-sm">
+                <p className="text-sm text-stone-500">בקשות החלפה</p>
+                <p className="mt-2 text-3xl font-semibold text-stone-900">
+                  {activeSwapRequestsCount}
+                </p>
+                <p className="mt-1 text-sm text-stone-600">
+                  כמות הבקשות הפעילות לתורנות הזאת
+                </p>
+                <Link
+                  href={swapRequestsHref}
+                  className="mt-4 inline-flex rounded-2xl border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-900 transition hover:border-stone-900"
+                >
+                  מעבר לבקשות ההחלפה
+                </Link>
+              </div>
 
-            <div className="rounded-3xl bg-white p-5 shadow-sm">
-              <p className="text-sm text-stone-500">סטטוס תורנות</p>
-              <p className="mt-2 text-lg font-semibold text-stone-900">
-                {formatShiftStatus(shift.status)}
-              </p>
-              <p className="mt-1 text-sm text-stone-600">
-                סוג: {formatShiftType(shift.shiftType)}
-              </p>
+              <div className="rounded-3xl bg-white p-5 shadow-sm">
+                <p className="text-sm text-stone-500">סטטוס התורנות</p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <span
+                    className={`rounded-full px-3 py-1 text-sm font-semibold ${lifecycleStatus.tone}`}
+                  >
+                    {lifecycleStatus.label}
+                  </span>
+                  <span className="text-sm text-stone-500">
+                    סוג: {formatShiftType(shift.shiftType)}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm leading-7 text-stone-600">
+                  {lifecycleStatus.description}
+                </p>
+              </div>
             </div>
           </div>
         </section>
@@ -203,11 +351,11 @@ export function ManageShiftDetailClient({ shift }: Props) {
                   שיבוצים בהמתנה
                 </p>
                 <h2 className="mt-2 text-2xl font-semibold text-amber-950">
-                  יש משתמשים עם סטטוס `pending`
+                  יש משתמשים עם סטטוס ממתין
                 </h2>
                 <p className="mt-2 text-sm leading-7 text-amber-900">
-                  אם צריך לעדכן את השיבוץ, אפשר לעבור למסך השיבוצים ולבצע שם שינוי
-                  מלא ברשימת המשתמשים של התורנות.
+                  אם צריך לעדכן את ההקצאה או לאשר שיבוצים, אפשר לעבור למסך
+                  השיבוץ ולעבוד שם על הרשימה המלאה.
                 </p>
               </div>
 
@@ -215,7 +363,7 @@ export function ManageShiftDetailClient({ shift }: Props) {
                 href={`/manage-shifts/${shift.id}/assign`}
                 className="inline-flex rounded-2xl bg-amber-700 px-5 py-3 text-sm font-medium text-white transition hover:bg-amber-800"
               >
-                מעבר למסך השיבוצים
+                מעבר למסך השיבוץ
               </Link>
             </div>
           </section>
@@ -225,7 +373,7 @@ export function ManageShiftDetailClient({ shift }: Props) {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
-                התורנים לתורנות הנוכחית
+                תורנים לתורנות הנוכחית
               </p>
               <h2 className="mt-2 text-3xl font-semibold text-stone-900">
                 רשימת משתתפים ושיבוצים
@@ -240,7 +388,7 @@ export function ManageShiftDetailClient({ shift }: Props) {
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             {activeRegistrations.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-stone-300 bg-stone-50 px-6 py-10 text-center text-sm text-stone-600 md:col-span-2">
-                עדיין אין משתמשים משובצים לתורנות הזו.
+                עדיין אין משתמשים משובצים לתורנות הזאת.
               </div>
             ) : (
               activeRegistrations.map((registration) => (
@@ -281,7 +429,7 @@ export function ManageShiftDetailClient({ shift }: Props) {
                         href={`/manage-shifts/${shift.id}/assign`}
                         className="inline-flex rounded-2xl border border-stone-900 bg-white px-4 py-2 text-sm font-medium text-stone-900 transition hover:bg-stone-100"
                       >
-                        עדכון דרך מסך השיבוצים
+                        עדכון דרך מסך השיבוץ
                       </Link>
                     ) : null}
                   </div>
@@ -298,7 +446,7 @@ export function ManageShiftDetailClient({ shift }: Props) {
                 היסטוריית סטטוסים
               </p>
               <h2 className="mt-2 text-2xl font-semibold text-stone-900">
-                בקשות שלא פעילות כרגע
+                בקשות שאינן פעילות כרגע
               </h2>
             </div>
 
@@ -339,30 +487,6 @@ export function ManageShiftDetailClient({ shift }: Props) {
       <aside className="space-y-6">
         <section className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm">
           <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
-            פעולות מהירות
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold text-stone-900">
-            עריכה וניהול
-          </h2>
-
-          <div className="mt-6 space-y-3">
-            <Link
-              href={`/manage-shifts/${shift.id}/edit`}
-              className="flex items-center justify-center rounded-2xl bg-stone-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-stone-700"
-            >
-              עריכת פרטי התורנות
-            </Link>
-            <Link
-              href={`/manage-shifts/${shift.id}/assign`}
-              className="flex items-center justify-center rounded-2xl border border-stone-900 bg-white px-5 py-3 text-sm font-medium text-stone-900 transition hover:bg-stone-100"
-            >
-              ניהול שיבוצים
-            </Link>
-          </div>
-        </section>
-
-        <section className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
             פרטי התורנות
           </p>
           <h2 className="mt-2 text-2xl font-semibold text-stone-900">
@@ -385,6 +509,23 @@ export function ManageShiftDetailClient({ shift }: Props) {
             </div>
 
             <div className="rounded-3xl border border-stone-200 bg-stone-50 p-4">
+              <p className="text-sm text-stone-500">סטטוס שמור במערכת</p>
+              <p className="mt-1 text-base font-semibold text-stone-900">
+                {formatStoredShiftStatus(shift.status)}
+              </p>
+            </div>
+
+            <div className="rounded-3xl border border-stone-200 bg-stone-50 p-4">
+              <p className="text-sm text-stone-500">תפוסה נוכחית</p>
+              <p className="mt-1 text-base font-semibold text-stone-900">
+                {shift.reservedSlots} מתוך {shift.capacity}
+              </p>
+              <p className="mt-1 text-sm text-stone-600">
+                {shift.availableSlots} מקומות פנויים
+              </p>
+            </div>
+
+            <div className="rounded-3xl border border-stone-200 bg-stone-50 p-4">
               <p className="text-sm text-stone-500">מיקום</p>
               <p className="mt-1 text-base font-semibold text-stone-900">
                 {shift.location || "לא הוגדר"}
@@ -394,7 +535,7 @@ export function ManageShiftDetailClient({ shift }: Props) {
             <div className="rounded-3xl border border-stone-200 bg-stone-50 p-4">
               <p className="text-sm text-stone-500">תיאור</p>
               <p className="mt-1 text-sm leading-7 text-stone-700">
-                {shift.description || "אין תיאור נוסף לתורנות הזו."}
+                {shift.description || "אין תיאור נוסף לתורנות הזאת."}
               </p>
             </div>
 
@@ -406,6 +547,7 @@ export function ManageShiftDetailClient({ shift }: Props) {
             </div>
           </div>
         </section>
+
         <section className="rounded-[2rem] border border-rose-200 bg-rose-50 p-6 shadow-sm">
           <p className="text-sm font-semibold tracking-[0.2em] text-rose-700">
             מחיקה

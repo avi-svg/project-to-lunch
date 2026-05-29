@@ -3,7 +3,11 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/auth";
 import { ManageShiftDetailClient } from "@/components/manage-shift-detail-client";
-import { BackendShiftsError, fetchShiftByIdForUser } from "@/lib/server-shifts";
+import {
+  BackendShiftsError,
+  fetchShiftByIdForUser,
+  fetchShiftSwapRequestsForUser,
+} from "@/lib/server-shifts";
 
 type PageProps = {
   params: Promise<{
@@ -25,6 +29,7 @@ export default async function ManageSingleShiftPage({ params }: PageProps) {
   const { id } = await params;
   let errorMessage = "";
   let shift = null;
+  let activeSwapRequestsCount = 0;
 
   try {
     const response = await fetchShiftByIdForUser(session.user.id, id);
@@ -36,6 +41,21 @@ export default async function ManageSingleShiftPage({ params }: PageProps) {
         : error instanceof Error
           ? error.message
           : "לא הצלחנו לטעון את פרטי התורנות.";
+  }
+
+  if (!errorMessage && shift) {
+    try {
+      const swapRequestsResponse = await fetchShiftSwapRequestsForUser(
+        session.user.id,
+      );
+      activeSwapRequestsCount = swapRequestsResponse.requests.filter(
+        (request) =>
+          request.shift.id === id &&
+          (request.status === "pending" || request.status === "approved"),
+      ).length;
+    } catch {
+      activeSwapRequestsCount = 0;
+    }
   }
 
   return (
@@ -66,7 +86,10 @@ export default async function ManageSingleShiftPage({ params }: PageProps) {
             </p>
           </section>
         ) : (
-          <ManageShiftDetailClient shift={shift} />
+          <ManageShiftDetailClient
+            shift={shift}
+            activeSwapRequestsCount={activeSwapRequestsCount}
+          />
         )}
       </div>
     </main>

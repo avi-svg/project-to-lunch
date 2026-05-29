@@ -9,13 +9,21 @@ import {
 } from "@/lib/server-shifts";
 import type { Shift } from "@/lib/shifts";
 
-export default async function ShiftAttendancePage() {
+type PageProps = {
+  searchParams?: Promise<{
+    shiftId?: string;
+  }>;
+};
+
+export default async function ShiftAttendancePage({ searchParams }: PageProps) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
     redirect("/");
   }
 
+  const resolvedSearchParams = await searchParams;
+  const selectedShiftId = resolvedSearchParams?.shiftId?.trim() ?? "";
   let myShifts: Shift[] = [];
   let reviewShifts: Shift[] = [];
   let errorMessage = "";
@@ -24,6 +32,11 @@ export default async function ShiftAttendancePage() {
     const response = await fetchShiftAttendanceDashboardForUser(session.user.id);
     myShifts = response.myShifts;
     reviewShifts = response.reviewShifts;
+
+    if (selectedShiftId) {
+      myShifts = myShifts.filter((shift) => shift.id === selectedShiftId);
+      reviewShifts = reviewShifts.filter((shift) => shift.id === selectedShiftId);
+    }
   } catch (error) {
     errorMessage =
       error instanceof BackendShiftsError
@@ -48,6 +61,17 @@ export default async function ShiftAttendancePage() {
             מעבר לאזור האישי
           </Link>
         </div>
+
+        {selectedShiftId ? (
+          <section className="rounded-[2rem] border border-stone-200 bg-white p-5 shadow-sm">
+            <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
+              מסנן פעיל
+            </p>
+            <p className="mt-2 text-sm leading-7 text-stone-700">
+              מוצגת כאן רק תורנות אחת לצורך דיווח ואישור נוכחות.
+            </p>
+          </section>
+        ) : null}
 
         <ShiftAttendanceClient
           currentUserName={session.user.name ?? "משתמש"}
