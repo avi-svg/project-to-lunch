@@ -15,6 +15,7 @@ type Props = {
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("he-IL", {
+    timeZone: "Asia/Jerusalem",
     weekday: "short",
     day: "2-digit",
     month: "2-digit",

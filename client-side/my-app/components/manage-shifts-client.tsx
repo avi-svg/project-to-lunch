@@ -113,6 +113,7 @@ function addMinutes(date: Date, minutes: number) {
 
 function formatDateTime(date: Date) {
   return new Intl.DateTimeFormat("he-IL", {
+    timeZone: "Asia/Jerusalem",
     weekday: "short",
     day: "2-digit",
     month: "short",

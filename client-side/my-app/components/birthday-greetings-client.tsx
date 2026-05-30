@@ -20,6 +20,7 @@ const suggestionMessages = [
 function formatGreetingTime(value: string) {
   try {
     return new Intl.DateTimeFormat("he-IL", {
+      timeZone: "Asia/Jerusalem",
       day: "numeric",
       month: "long",
       hour: "2-digit",

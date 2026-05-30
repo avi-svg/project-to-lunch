@@ -46,6 +46,7 @@ function clamp(value: number, min: number, max: number) {
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("he-IL", {
+    timeZone: "Asia/Jerusalem",
     weekday: "short",
     day: "2-digit",
     month: "short",
