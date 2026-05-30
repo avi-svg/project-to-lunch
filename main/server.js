@@ -8,6 +8,7 @@ const usersRoutes = require('./routes/users');
 const usersController = require('./controllers/usersController');
 const { requireInternalApiKey } = require('./lib/user-roles');
 const { startBirthdayWhatsAppScheduler } = require('./lib/birthday-whatsapp');
+const { startShiftReminderScheduler } = require('./lib/shift-reminder-whatsapp');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -491,6 +492,7 @@ async function startServer() {
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
   startBirthdayWhatsAppScheduler();
+  startShiftReminderScheduler();
 });
   } catch (error) {
     console.error('Failed to start server:', error);
