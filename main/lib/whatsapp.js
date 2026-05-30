@@ -122,6 +122,7 @@ async function sendWhatsAppTemplate({
   name,
   languageCode,
   bodyParameters = [],
+  buttonParameters = [],
 }) {
   if (!to || !name || !languageCode) {
     throw new Error(
@@ -135,6 +136,32 @@ async function sendWhatsAppTemplate({
     throw new Error('Recipient phone number is missing or invalid for WhatsApp.');
   }
 
+  const components = [];
+
+  if (bodyParameters.length > 0) {
+    components.push({
+      type: 'body',
+      parameters: bodyParameters.map((parameter) => ({
+        type: 'text',
+        text: String(parameter ?? ''),
+      })),
+    });
+  }
+
+  for (let i = 0; i < buttonParameters.length; i++) {
+    components.push({
+      type: 'button',
+      sub_type: 'url',
+      index: String(i),
+      parameters: [
+        {
+          type: 'text',
+          text: String(buttonParameters[i] ?? ''),
+        },
+      ],
+    });
+  }
+
   return performWhatsAppRequest({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -145,18 +172,7 @@ async function sendWhatsAppTemplate({
       language: {
         code: languageCode,
       },
-      components:
-        bodyParameters.length > 0
-          ? [
-              {
-                type: 'body',
-                parameters: bodyParameters.map((parameter) => ({
-                  type: 'text',
-                  text: String(parameter ?? ''),
-                })),
-              },
-            ]
-          : undefined,
+      components: components.length > 0 ? components : undefined,
     },
   });
 }

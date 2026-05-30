@@ -64,6 +64,10 @@ const SHIFT_ASSIGNMENT_TEMPLATE_NAME =
   'shifts';
 const SHIFT_ASSIGNMENT_TEMPLATE_LANGUAGE_CODE =
   process.env.WHATSAPP_SHIFT_ASSIGNMENT_TEMPLATE_LANGUAGE_CODE || 'he';
+const SHIFT_UPDATE_TEMPLATE_NAME =
+  process.env.WHATSAPP_SHIFT_UPDATE_TEMPLATE_NAME || 'shifts_update';
+const SHIFT_UPDATE_TEMPLATE_LANGUAGE_CODE =
+  process.env.WHATSAPP_SHIFT_UPDATE_TEMPLATE_LANGUAGE_CODE || 'he';
 const ATTENDANCE_REPORT_WINDOW_MINUTES = 5;
 
 function isValidDate(value) {
@@ -616,6 +620,68 @@ async function sendShiftAssignmentNotifications(shift, users) {
 
     summary.failed += 1;
     console.error('Failed to send shift assignment WhatsApp notification:', result.reason);
+  }
+
+  return summary;
+}
+
+async function sendForcedShiftAssignmentNotifications(shift, users) {
+  const summary = {
+    attempted: 0,
+    sent: 0,
+    skippedNoPhone: 0,
+    skippedInvalidPhone: 0,
+    failed: 0,
+  };
+
+  if (!Array.isArray(users) || users.length === 0) {
+    return summary;
+  }
+
+  const shiftStartTime = shift.start_time || shift.startTime;
+  const shiftId = shift.id;
+  const notificationTasks = [];
+
+  for (const user of users) {
+    if (!user.phone || String(user.phone).trim().length === 0) {
+      summary.skippedNoPhone += 1;
+      continue;
+    }
+
+    const normalizedPhone = normalizeWhatsAppRecipient(user.phone);
+
+    if (!normalizedPhone) {
+      summary.skippedInvalidPhone += 1;
+      continue;
+    }
+
+    summary.attempted += 1;
+    notificationTasks.push(
+      sendWhatsAppTemplate({
+        to: normalizedPhone,
+        name: SHIFT_UPDATE_TEMPLATE_NAME,
+        languageCode: SHIFT_UPDATE_TEMPLATE_LANGUAGE_CODE,
+        bodyParameters: [
+          user.name ? String(user.name).trim() : 'חבר קהילה',
+          shift.title,
+          formatShiftNotificationWeekday(shiftStartTime),
+          formatShiftNotificationTime(shiftStartTime),
+        ],
+        buttonParameters: [shiftId],
+      })
+    );
+  }
+
+  const results = await Promise.allSettled(notificationTasks);
+
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      summary.sent += 1;
+      continue;
+    }
+
+    summary.failed += 1;
+    console.error('Failed to send forced shift update WhatsApp notification:', result.reason);
   }
 
   return summary;
@@ -2715,6 +2781,7 @@ async function replaceShiftAssignments(req, res, next) {
       targetUsersResult.rows.map((user) => [user.id, user])
     );
     const usersToNotifyById = new Map();
+    const forcedUsersToNotifyById = new Map();
     const forcedReviewNote = 'Force assigned by staff.';
     const assignmentSummary = {
       standard: 0,
@@ -2783,6 +2850,10 @@ async function replaceShiftAssignments(req, res, next) {
           usersToNotifyById.set(userId, targetUser);
         }
 
+        if (targetUser && selectedAssignmentType === 'forced') {
+          forcedUsersToNotifyById.set(userId, targetUser);
+        }
+
         continue;
       }
 
@@ -2807,6 +2878,11 @@ async function replaceShiftAssignments(req, res, next) {
            WHERE id = $1`,
           [registration.id, req.actor.id, forcedReviewNote]
         );
+
+        const targetUserPending = targetUsersById.get(userId);
+        if (targetUserPending) {
+          forcedUsersToNotifyById.set(userId, targetUserPending);
+        }
         continue;
       }
 
@@ -2826,6 +2902,10 @@ async function replaceShiftAssignments(req, res, next) {
 
       if (targetUser && selectedAssignmentType === 'standard') {
         usersToNotifyById.set(userId, targetUser);
+      }
+
+      if (targetUser && selectedAssignmentType === 'forced') {
+        forcedUsersToNotifyById.set(userId, targetUser);
       }
     }
 
@@ -2884,6 +2964,13 @@ async function replaceShiftAssignments(req, res, next) {
             Array.from(usersToNotifyById.values())
           )
         : undefined;
+    const forcedNotificationSummary =
+      assignmentSummary.forced > 0
+        ? await sendForcedShiftAssignmentNotifications(
+            updatedShiftResult.rows[0],
+            Array.from(forcedUsersToNotifyById.values())
+          )
+        : undefined;
 
     return res.json({
       message: buildShiftAssignmentResponseMessage(
@@ -2894,6 +2981,7 @@ async function replaceShiftAssignments(req, res, next) {
       appliedAssignmentType,
       assignmentSummary,
       notificationSummary,
+      forcedNotificationSummary,
       shift: formattedShift,
     });
   } catch (error) {
