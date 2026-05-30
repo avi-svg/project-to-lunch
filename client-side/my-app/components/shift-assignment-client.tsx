@@ -129,11 +129,11 @@ function buildSuccessMessage(result: ReplaceShiftAssignmentsResponse) {
   if (summary) {
     if (summary.forced > 0 && summary.standard > 0) {
       messageParts.push(
-        `${summary.forced} משתמשים סומנו כמאולץ ואושרו מיד, ו-${summary.standard} משתמשים סומנו כלא מאולץ ויקבלו בקשת אישור בוואטסאפ.`,
+        `${summary.forced} משתמשים סומנו כמאולץ ואושרו מיד וקיבלו עדכון בוואטסאפ, ו-${summary.standard} משתמשים סומנו כלא מאולץ ויקבלו בקשת אישור בוואטסאפ.`,
       );
     } else if (summary.forced > 0) {
       messageParts.push(
-        `${summary.forced} משתמשים סומנו כמאולץ ואושרו מיד בלי בקשת אישור בוואטסאפ.`,
+        `${summary.forced} משתמשים סומנו כמאולץ ואושרו מיד וקיבלו עדכון בוואטסאפ.`,
       );
     } else if (summary.standard > 0) {
       messageParts.push(
@@ -698,7 +698,7 @@ export function ShiftAssignmentClient({
                                         מאולץ
                                       </p>
                                       <p className="text-sm text-stone-600">
-                                        לא תישלח בקשת אישור בוואטסאפ והשיבוץ יאושר מיד בשמירה.
+                                        השיבוץ יאושר מיד בשמירה ותישלח הודעת עדכון בוואטסאפ.
                                       </p>
                                     </div>
                                   </label>
@@ -712,7 +712,7 @@ export function ShiftAssignmentClient({
                                   }`}
                                 >
                                   {user.assignmentType === "forced"
-                                    ? "בבחירה הנוכחית המשתמש יאושר מיד עם השמירה."
+                                    ? "בבחירה הנוכחית המשתמש יאושר מיד עם השמירה ויקבל הודעת עדכון בוואטסאפ."
                                     : "בבחירה הנוכחית המשתמש יקבל בקשת אישור בוואטסאפ."}
                                 </p>
                               </div>
