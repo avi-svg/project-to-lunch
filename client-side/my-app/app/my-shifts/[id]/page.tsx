@@ -27,7 +27,13 @@ export default async function MyShiftPage({ params }: PageProps) {
     redirect("/dashboard");
   }
 
-  const { id } = await params;
+  const { id: rawId } = await params;
+  const id = decodeURIComponent(rawId).replace(/^\{\{1\}\}/, "");
+
+  if (id !== decodeURIComponent(rawId)) {
+    redirect(`/my-shifts/${id}`);
+  }
+
   let shift: Shift | null = null;
   let shiftSwapRequests: ShiftSwapRequest[] = [];
   let errorMessage = "";
