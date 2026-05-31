@@ -36,6 +36,10 @@ router.post(
   '/:id/registrations/:registrationId/attendance/manual',
   shiftsController.reportAttendanceManually
 );
+router.post(
+  '/:id/registrations/:registrationId/attendance/absent',
+  shiftsController.reportAttendanceAbsent
+);
 router.patch(
   '/:id/attendance/:attendanceId/approve',
   shiftsController.approveAttendance

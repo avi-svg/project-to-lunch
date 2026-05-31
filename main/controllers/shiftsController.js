@@ -2683,6 +2683,137 @@ async function reportAttendanceManually(req, res, next) {
   }
 }
 
+async function reportAttendanceAbsent(req, res, next) {
+  const { id, registrationId } = req.params;
+
+  if (!isValidUuid(id) || !isValidUuid(registrationId)) {
+    return res.status(400).json({
+      message: 'Shift id and registration id must be valid UUIDs.',
+    });
+  }
+
+  if (!isStaffLike(req.actor.role)) {
+    return res.status(403).json({
+      message: 'Only staff users can mark attendance as absent.',
+    });
+  }
+
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const shiftResult = await client.query(
+      `SELECT *
+       FROM public.shifts
+       WHERE id = $1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (shiftResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        message: 'Shift not found.',
+      });
+    }
+
+    const shift = shiftResult.rows[0];
+
+    if (!canReportAttendanceManuallyForShift(shift, null)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message:
+          'Absent attendance can only be recorded from five minutes before the shift starts and later.',
+      });
+    }
+
+    const registrationResult = await client.query(
+      `SELECT *
+       FROM public.shift_registrations
+       WHERE id = $1
+         AND shift_id = $2
+       LIMIT 1
+       FOR UPDATE`,
+      [registrationId, id]
+    );
+
+    if (registrationResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        message: 'Registration not found.',
+      });
+    }
+
+    const registration = registrationResult.rows[0];
+
+    if (registration.status !== 'approved') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'Absent attendance can only be recorded for approved registrations.',
+      });
+    }
+
+    const existingAttendanceResult = await client.query(
+      `SELECT id
+       FROM public.shift_attendance
+       WHERE registration_id = $1
+       LIMIT 1
+       FOR UPDATE`,
+      [registrationId]
+    );
+
+    if (existingAttendanceResult.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'Attendance has already been recorded for this registration.',
+      });
+    }
+
+    const attendanceId = randomUUID();
+
+    await client.query(
+      `INSERT INTO public.shift_attendance (
+         id,
+         shift_id,
+         registration_id,
+         user_id,
+         status,
+         report_source,
+         reported_at,
+         reported_by_user_id,
+         reviewed_at,
+         reviewed_by_user_id
+       )
+       VALUES (
+         $1,
+         $2,
+         $3,
+         $4,
+         'approved',
+         'staff-absent',
+         timezone('utc', now()),
+         $5,
+         timezone('utc', now()),
+         $5
+       )`,
+      [attendanceId, id, registrationId, registration.user_id, req.actor.id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({
+      message: 'Attendance was marked as absent by staff.',
+      attendance: await loadFormattedAttendanceById(attendanceId),
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    return next(error);
+  } finally {
+    client.release();
+  }
+}
+
 async function replaceShiftAssignments(req, res, next) {
   const { id } = req.params;
   const {
@@ -3862,6 +3993,7 @@ module.exports = {
   listWeekShifts,
   replaceShiftAssignments,
   reportAttendance,
+  reportAttendanceAbsent,
   reportAttendanceManually,
   registerForShift,
   rejectAttendance,

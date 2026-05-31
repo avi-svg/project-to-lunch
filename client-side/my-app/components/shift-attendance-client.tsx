@@ -5,6 +5,7 @@ import {
   approveShiftAttendance,
   rejectShiftAttendance,
   reportShiftAttendance,
+  reportShiftAttendanceAbsent,
   reportShiftAttendanceManually,
   type Shift,
   type ShiftAttendance,
@@ -47,16 +48,19 @@ function getAttendanceWindowEnd(shift: Shift) {
 
 function getMyAttendanceState(shift: Shift, now: number) {
   if (shift.myAttendance) {
+    const isAbsent = shift.myAttendance.reportSource === "staff-absent";
     return {
       canReport: false,
-      tone:
-        shift.myAttendance.status === "approved"
+      tone: isAbsent
+        ? "stone"
+        : shift.myAttendance.status === "approved"
           ? "emerald"
           : shift.myAttendance.status === "rejected"
             ? "rose"
             : "amber",
-      title:
-        shift.myAttendance.status === "approved"
+      title: isAbsent
+        ? "סומנת כלא נוכח על ידי איש צוות"
+        : shift.myAttendance.status === "approved"
           ? "הנוכחות אושרה"
           : shift.myAttendance.status === "rejected"
             ? "הנוכחות נדחתה"
@@ -117,10 +121,23 @@ function getAttendanceSourceLabel(attendance: ShiftAttendance) {
       : "דווח ידנית על ידי איש צוות";
   }
 
+  if (attendance.reportSource === "staff-absent") {
+    return attendance.reportedBy?.name
+      ? `סומן כלא נוכח על ידי ${attendance.reportedBy.name}`
+      : "סומן כלא נוכח על ידי איש צוות";
+  }
+
   return "דווח עצמאית על ידי המשתמש";
 }
 
-function getAttendanceBadgeClass(status: ShiftAttendanceStatus | "missing") {
+function getAttendanceBadgeClass(
+  status: ShiftAttendanceStatus | "missing",
+  absent = false,
+) {
+  if (absent) {
+    return "border-stone-300 bg-stone-100 text-stone-600";
+  }
+
   if (status === "approved") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
@@ -257,6 +274,9 @@ export function ShiftAttendanceClient({
   const [activeShiftId, setActiveShiftId] = useState<string | null>(null);
   const [activeAttendanceId, setActiveAttendanceId] = useState<string | null>(null);
   const [activeManualRegistrationId, setActiveManualRegistrationId] = useState<
+    string | null
+  >(null);
+  const [activeAbsentRegistrationId, setActiveAbsentRegistrationId] = useState<
     string | null
   >(null);
   const [now, setNow] = useState(() => Date.now());
@@ -420,6 +440,25 @@ export function ShiftAttendanceClient({
     });
   }
 
+  function handleAbsentAttendance(shiftId: string, registrationId: string) {
+    setFeedback("");
+    setActiveAbsentRegistrationId(registrationId);
+
+    startTransition(async () => {
+      try {
+        const result = await reportShiftAttendanceAbsent(shiftId, registrationId);
+        applyAttendanceUpdate(result.attendance);
+        setFeedback(result.message);
+      } catch (error) {
+        setFeedback(
+          error instanceof Error ? error.message : "סימון הנוכחות כלא נוכח נכשל.",
+        );
+      } finally {
+        setActiveAbsentRegistrationId(null);
+      }
+    });
+  }
+
   return (
     <div className="space-y-8">
       <section className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
@@ -498,10 +537,13 @@ export function ShiftAttendanceClient({
                     <span
                       className={`rounded-full border px-3 py-2 text-xs font-semibold ${getAttendanceBadgeClass(
                         shift.myAttendance?.status ?? "missing",
+                        shift.myAttendance?.reportSource === "staff-absent",
                       )}`}
                     >
                       {shift.myAttendance
-                        ? getAttendanceStatusLabel(shift.myAttendance.status)
+                        ? shift.myAttendance.reportSource === "staff-absent"
+                          ? "לא נוכח"
+                          : getAttendanceStatusLabel(shift.myAttendance.status)
                         : "טרם דווח"}
                     </span>
                   </div>
@@ -653,10 +695,13 @@ export function ShiftAttendanceClient({
                                 <span
                                   className={`rounded-full border px-3 py-2 text-xs font-semibold ${getAttendanceBadgeClass(
                                     attendance?.status ?? "missing",
+                                    attendance?.reportSource === "staff-absent",
                                   )}`}
                                 >
                                   {attendance
-                                    ? getAttendanceStatusLabel(attendance.status)
+                                    ? attendance.reportSource === "staff-absent"
+                                      ? "לא נוכח"
+                                      : getAttendanceStatusLabel(attendance.status)
                                     : "לא דווח"}
                                 </span>
 
@@ -700,25 +745,48 @@ export function ShiftAttendanceClient({
                                 ) : null}
 
                                 {!attendance ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleManualAttendance(
-                                        shift.id,
-                                        registration.id,
-                                      )
-                                    }
-                                    disabled={
-                                      isPending &&
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleManualAttendance(
+                                          shift.id,
+                                          registration.id,
+                                        )
+                                      }
+                                      disabled={
+                                        isPending &&
+                                        (activeManualRegistrationId === registration.id ||
+                                          activeAbsentRegistrationId === registration.id)
+                                      }
+                                      className="rounded-2xl bg-sky-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-sky-300"
+                                    >
+                                      {isPending &&
                                       activeManualRegistrationId === registration.id
-                                    }
-                                    className="rounded-2xl bg-sky-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-sky-300"
-                                  >
-                                    {isPending &&
-                                    activeManualRegistrationId === registration.id
-                                      ? "שומר..."
-                                      : "דווח נוכחות ידנית"}
-                                  </button>
+                                        ? "שומר..."
+                                        : "דווח נוכחות ידנית"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleAbsentAttendance(
+                                          shift.id,
+                                          registration.id,
+                                        )
+                                      }
+                                      disabled={
+                                        isPending &&
+                                        (activeManualRegistrationId === registration.id ||
+                                          activeAbsentRegistrationId === registration.id)
+                                      }
+                                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:border-stone-400 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {isPending &&
+                                      activeAbsentRegistrationId === registration.id
+                                        ? "שומר..."
+                                        : "לא נוכח"}
+                                    </button>
+                                  </>
                                 ) : null}
                               </div>
                             </div>

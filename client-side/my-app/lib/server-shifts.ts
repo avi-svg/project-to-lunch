@@ -241,6 +241,20 @@ export async function reportShiftAttendanceManuallyForUser(
   );
 }
 
+export async function reportShiftAttendanceAbsentForUser(
+  userId: string,
+  shiftId: string,
+  registrationId: string,
+) {
+  return backendShiftsFetch<{ message: string; attendance: ShiftAttendance }>(
+    userId,
+    `/shifts/${shiftId}/registrations/${registrationId}/attendance/absent`,
+    {
+      method: "POST",
+    },
+  );
+}
+
 export async function confirmShiftRegistrationForUser(
   userId: string,
   shiftId: string,
