@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { authOptions } from "@/auth";
 import { BackendShiftsError, fetchWeekShiftsForUser } from "@/lib/server-shifts";
 import type { Shift } from "@/lib/shifts";
+import { getShiftColorTheme, getShiftCardStyle, getShiftDotStyle } from "@/lib/shift-colors";
 import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
@@ -321,7 +322,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
     errorMessage =
       error instanceof BackendShiftsError
         ? error.message
-        : "לא ניתן לטעון את התורנויות כרגע.";
+        : "לא ניתן לטעון את האירועים כרגע.";
   }
 
   const weekStart = currentWeekStart;
@@ -348,14 +349,14 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
         <section className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
           <div className="bg-[linear-gradient(135deg,#1c1917,#44403c)] px-8 py-10 text-white">
             <p className="text-sm font-semibold tracking-[0.25em] text-stone-300">
-              ניהול תורנויות
+              ניהול אירועים
             </p>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-              בוחרים תורנות מתוך הלוח
+              בוחרים אירוע מתוך הלוח
             </h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
-              המסך הזה מרכז את כל התורנויות בפורמט של לוח שנה. כל כרטיס מוביל לעמוד
-              ניהול תורנות מפורט עם תורנים, פרטים, עריכה ושיבוצים.
+              המסך הזה מרכז את כל האירועים בפורמט של לוח שנה. כל כרטיס מוביל לעמוד
+              ניהול מפורט עם משתתפים, פרטים, עריכה ושיבוצים.
             </p>
           </div>
 
@@ -391,7 +392,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
                 href="/manage-shifts/create"
                 className="inline-flex rounded-2xl border border-stone-900 bg-white px-5 py-3 text-sm font-medium text-stone-900 transition hover:bg-stone-100"
               >
-                יצירת תורנות חדשה
+                יצירת אירוע חדש
               </Link>
             </div>
 
@@ -488,7 +489,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
                 תצוגה חודשית
               </p>
               <h2 className="mt-2 text-3xl font-semibold text-stone-900">
-                בחירת תורנות מתוך החודש
+                בחירת אירוע מתוך החודש
               </h2>
             </div>
 
@@ -529,26 +530,36 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
 
                     <div className="mt-4 space-y-2 text-sm">
                       {dayShifts.length === 0 ? (
-                        <p className="text-stone-400">אין תורנויות ביום הזה.</p>
+                        <p className="text-stone-400">אין אירועים ביום הזה.</p>
                       ) : null}
 
                       {dayShifts.slice(0, 2).map((shift) => {
                         const pendingCount = getPendingCount(shift);
+                        const theme = getShiftColorTheme(shift);
+                        const cardStyle = getShiftCardStyle(theme);
+                        const dotStyle = getShiftDotStyle(theme);
 
                         return (
                           <Link
                             key={shift.id}
                             href={`/manage-shifts/${shift.id}`}
-                            className="block rounded-2xl bg-stone-100 px-3 py-2 text-stone-700 transition hover:bg-stone-200"
+                            className={`block rounded-2xl border px-3 py-2 transition hover:brightness-95 ${theme.card}`}
+                            style={cardStyle}
                           >
-                            <p className="truncate font-medium">{shift.title}</p>
-                            <p className="mt-1 text-xs">
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`h-2 w-2 flex-shrink-0 rounded-full ${theme.dot}`}
+                                style={dotStyle}
+                              />
+                              <p className="truncate font-medium">{shift.title}</p>
+                            </div>
+                            <p className="mt-1 text-xs text-stone-500">
                               {formatInDisplayTimeZone(shift.startTime, {
                                 hour: "2-digit",
                                 minute: "2-digit",
                               })}
                             </p>
-                            <p className="mt-2 text-xs text-stone-500">
+                            <p className="mt-1 text-xs text-stone-500">
                               {shift.reservedSlots}/{shift.capacity} משובצים
                               {pendingCount > 0 ? `, ${pendingCount} ממתינים` : ""}
                             </p>
@@ -558,7 +569,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
 
                       {dayShifts.length > 2 ? (
                         <p className="text-xs text-stone-500">
-                          ועוד {dayShifts.length - 2} תורנויות
+                          ועוד {dayShifts.length - 2} אירועים
                         </p>
                       ) : null}
                     </div>
@@ -571,16 +582,16 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
           <section className="space-y-6">
             <div>
               <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
-                כל התורנויות
+                כל האירועים
               </p>
               <h2 className="mt-2 text-3xl font-semibold text-stone-900">
-                בוחרים תורנות לניהול מתוך השבוע
+                בוחרים אירוע לניהול מתוך השבוע
               </h2>
             </div>
 
             {groupedShifts.length === 0 && !errorMessage ? (
               <div className="rounded-[2rem] border border-dashed border-stone-300 bg-white p-8 text-sm text-stone-600 shadow-sm">
-                עדיין לא נוצרו תורנויות לשבוע הזה.
+                עדיין לא נוצרו אירועים לשבוע הזה.
               </div>
             ) : null}
 
@@ -594,7 +605,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
                     {formatDayLabel(day)}
                   </h3>
                   <span className="text-sm text-stone-500">
-                    {dayShifts.length} תורנויות
+                    {dayShifts.length} אירועים
                   </span>
                 </div>
 
@@ -602,18 +613,28 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
                   {dayShifts.map((shift) => {
                     const pendingCount = getPendingCount(shift);
                     const approvedCount = getApprovedCount(shift);
+                    const theme = getShiftColorTheme(shift);
+                    const cardStyle = getShiftCardStyle(theme);
+                    const dotStyle = getShiftDotStyle(theme);
 
                     return (
                       <Link
                         key={shift.id}
                         href={`/manage-shifts/${shift.id}`}
-                        className="rounded-3xl border border-stone-200 bg-stone-50 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-stone-400 hover:bg-white"
+                        className={`rounded-3xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:brightness-95 ${theme.card}`}
+                        style={cardStyle}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div>
-                            <h4 className="text-xl font-semibold text-stone-900">
-                              {shift.title}
-                            </h4>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`h-3 w-3 flex-shrink-0 rounded-full ${theme.dot}`}
+                                style={dotStyle}
+                              />
+                              <h4 className="text-xl font-semibold text-stone-900">
+                                {shift.title}
+                              </h4>
+                            </div>
                             <p className="mt-2 text-sm text-stone-600">
                               {formatDateTime(shift.startTime)}
                             </p>
@@ -622,7 +643,10 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
                             </p>
                           </div>
 
-                          <span className="rounded-full bg-stone-900 px-3 py-1 text-xs font-semibold text-white">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${theme.badge} ${theme.badgeText}`}
+                            style={getShiftDotStyle(theme) ? { backgroundColor: theme.hex! } : undefined}
+                          >
                             לניהול
                           </span>
                         </div>

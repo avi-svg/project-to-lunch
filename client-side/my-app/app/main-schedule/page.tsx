@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { authOptions } from "@/auth";
 import { BackendShiftsError, fetchWeekShiftsForUser } from "@/lib/server-shifts";
 import type { Shift, ShiftRegistrationStatus } from "@/lib/shifts";
+import { getShiftColorTheme, getShiftCardStyle, getShiftDotStyle, getShiftBadgeStyle } from "@/lib/shift-colors";
 import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
@@ -575,17 +576,29 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                         {dayShifts.length} פעילות
                       </p>
 
-                      {dayShifts.slice(0, 2).map((shift) => (
+                      {dayShifts.slice(0, 2).map((shift) => {
+                        const theme = getShiftColorTheme(shift);
+                        const cardStyle = getShiftCardStyle(theme);
+                        const dotStyle = getShiftDotStyle(theme);
+
+                        return (
                         <div
                           key={shift.id}
-                          className={`rounded-2xl px-3 py-2 ${
-                            shift.myRegistration
-                              ? "bg-emerald-50 text-emerald-800"
-                              : "bg-stone-100 text-stone-700"
+                          className={`rounded-2xl border px-3 py-2 ${
+                            shift.myRegistration ? "border-emerald-200 bg-emerald-50 text-emerald-900" : `${theme.card} text-stone-700`
                           }`}
+                          style={shift.myRegistration ? undefined : cardStyle}
                         >
-                          <p className="truncate font-medium">{shift.title}</p>
-                          <p className="mt-1 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            {!shift.myRegistration && (
+                              <span
+                                className={`h-2 w-2 flex-shrink-0 rounded-full ${theme.dot}`}
+                                style={dotStyle}
+                              />
+                            )}
+                            <p className="truncate font-medium">{shift.title}</p>
+                          </div>
+                          <p className="mt-1 text-xs opacity-70">
                             {formatInDisplayTimeZone(shift.startTime, {
                               hour: "2-digit",
                               minute: "2-digit",
@@ -608,7 +621,8 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                             </div>
                           ) : null}
                         </div>
-                      ))}
+                        );
+                      })}
 
                       {dayShifts.length > 2 ? (
                         <p className="text-xs text-stone-500">
@@ -653,20 +667,35 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                  {dayShifts.map((shift) => (
+                  {dayShifts.map((shift) => {
+                    const theme = getShiftColorTheme(shift);
+                    const cardStyle = getShiftCardStyle(theme);
+                    const dotStyle = getShiftDotStyle(theme);
+                    const badgeStyle = getShiftBadgeStyle(theme);
+
+                    return (
                     <article
                       key={shift.id}
                       className={`rounded-3xl border p-5 shadow-sm transition ${
                         shift.myRegistration
                           ? "border-emerald-200 bg-emerald-50"
-                          : "border-stone-200 bg-stone-50"
+                          : theme.card
                       }`}
+                      style={shift.myRegistration ? undefined : cardStyle}
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <h4 className="text-xl font-semibold text-stone-900">
-                            {shift.title}
-                          </h4>
+                          <div className="flex items-center gap-2">
+                            {!shift.myRegistration && (
+                              <span
+                                className={`h-3 w-3 flex-shrink-0 rounded-full ${theme.dot}`}
+                                style={dotStyle}
+                              />
+                            )}
+                            <h4 className="text-xl font-semibold text-stone-900">
+                              {shift.title}
+                            </h4>
+                          </div>
                           <p className="mt-2 text-sm text-stone-600">
                             {formatDateTime(shift.startTime)}
                           </p>
@@ -680,7 +709,10 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                             {formatRegistrationStatus(shift.myRegistration.status)}
                           </span>
                         ) : (
-                          <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold text-stone-700">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${theme.badge} ${theme.badgeText}`}
+                            style={badgeStyle}
+                          >
                             פעילות כללית
                           </span>
                         )}
@@ -713,7 +745,8 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                         ) : null}
                       </div>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             ))}

@@ -350,6 +350,10 @@ function formatShiftRow(row) {
     durationMinutes: getDurationMinutes(row.start_time, row.end_time),
     capacity: row.capacity,
     status: row.status,
+    allowSwapRequests: row.allow_swap_requests ?? null,
+    requireAttendanceReport: row.require_attendance_report ?? null,
+    themeColor: row.theme_color ?? null,
+    isSeries: Boolean(row.is_series),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     createdBy: {
@@ -1849,6 +1853,10 @@ async function createShift(req, res, next) {
     endTime,
     durationMinutes,
     capacity,
+    allowSwapRequests,
+    requireAttendanceReport,
+    themeColor,
+    isSeries,
   } = req.body || {};
 
   if (!isStaffLike(req.actor.role)) {
@@ -1939,6 +1947,18 @@ async function createShift(req, res, next) {
   }
 
   try {
+    const normalizedThemeColor =
+      typeof themeColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(themeColor.trim())
+        ? themeColor.trim()
+        : null;
+    const normalizedAllowSwapRequests =
+      allowSwapRequests === true || allowSwapRequests === false ? allowSwapRequests : null;
+    const normalizedRequireAttendanceReport =
+      requireAttendanceReport === true || requireAttendanceReport === false
+        ? requireAttendanceReport
+        : null;
+    const normalizedIsSeries = Boolean(isSeries);
+
     const result = await db.query(
       `INSERT INTO public.shifts (
          id,
@@ -1949,9 +1969,13 @@ async function createShift(req, res, next) {
          end_time,
          capacity,
          created_by_user_id,
-         category
+         category,
+         allow_swap_requests,
+         require_attendance_report,
+         theme_color,
+         is_series
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`,
       [
         randomUUID(),
@@ -1963,6 +1987,10 @@ async function createShift(req, res, next) {
         Number(capacity),
         req.actor.id,
         resolvedCategory,
+        normalizedAllowSwapRequests,
+        normalizedRequireAttendanceReport,
+        normalizedThemeColor,
+        normalizedIsSeries,
       ]
     );
 
@@ -1984,8 +2012,19 @@ async function createShift(req, res, next) {
 
 async function updateShift(req, res, next) {
   const { id } = req.params;
-  const { title, description, location, startTime, endTime, capacity, status } =
-    req.body;
+  const {
+    title,
+    description,
+    location,
+    startTime,
+    endTime,
+    capacity,
+    status,
+    allowSwapRequests,
+    requireAttendanceReport,
+    themeColor,
+    isSeries,
+  } = req.body;
 
   if (!isValidUuid(id)) {
     return res.status(400).json({
@@ -2000,7 +2039,11 @@ async function updateShift(req, res, next) {
     startTime === undefined &&
     endTime === undefined &&
     capacity === undefined &&
-    status === undefined
+    status === undefined &&
+    allowSwapRequests === undefined &&
+    requireAttendanceReport === undefined &&
+    themeColor === undefined &&
+    isSeries === undefined
   ) {
     return res.status(400).json({
       message:
@@ -2032,6 +2075,26 @@ async function updateShift(req, res, next) {
     }
 
     const nextTitle = title !== undefined ? String(title).trim() : shift.title;
+    const nextAllowSwapRequests =
+      allowSwapRequests === true || allowSwapRequests === false
+        ? allowSwapRequests
+        : allowSwapRequests === null
+          ? null
+          : shift.allow_swap_requests ?? null;
+    const nextRequireAttendanceReport =
+      requireAttendanceReport === true || requireAttendanceReport === false
+        ? requireAttendanceReport
+        : requireAttendanceReport === null
+          ? null
+          : shift.require_attendance_report ?? null;
+    const nextThemeColor =
+      themeColor !== undefined
+        ? typeof themeColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(themeColor.trim())
+          ? themeColor.trim()
+          : null
+        : shift.theme_color ?? null;
+    const nextIsSeries =
+      isSeries !== undefined ? Boolean(isSeries) : Boolean(shift.is_series);
     const nextDescription =
       description !== undefined
         ? description === null
@@ -2111,7 +2174,11 @@ async function updateShift(req, res, next) {
            start_time = $4,
            end_time = $5,
            capacity = $6,
-           status = $7
+           status = $7,
+           allow_swap_requests = $9,
+           require_attendance_report = $10,
+           theme_color = $11,
+           is_series = $12
        WHERE id = $8`,
       [
         nextTitle,
@@ -2122,6 +2189,10 @@ async function updateShift(req, res, next) {
         nextCapacity,
         nextStatus,
         id,
+        nextAllowSwapRequests,
+        nextRequireAttendanceReport,
+        nextThemeColor,
+        nextIsSeries,
       ]
     );
 

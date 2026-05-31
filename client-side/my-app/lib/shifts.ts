@@ -1,6 +1,7 @@
 export type UserRole = "admin" | "staff" | "user";
 export type ShiftStatus = "open" | "closed" | "cancelled" | "completed";
 export type ShiftType = "dinner" | "cleaning";
+export type ShiftEventCategory = "dinner" | "cleaning" | "custom";
 export type ShiftAssignmentMode = "assign-later" | "assign-now";
 export type ShiftAssignmentRequestType = "standard" | "forced";
 export type ShiftAssignmentAppliedType =
@@ -114,6 +115,10 @@ export type Shift = {
   durationMinutes?: number | null;
   capacity: number;
   status: ShiftStatus;
+  allowSwapRequests: boolean | null;
+  requireAttendanceReport: boolean | null;
+  themeColor: string | null;
+  isSeries: boolean;
   createdAt: string;
   updatedAt: string;
   createdBy: ShiftActor;
@@ -220,6 +225,10 @@ export type CreateShiftPayload = {
   endTime: string;
   durationMinutes?: number;
   capacity: number;
+  allowSwapRequests?: boolean | null;
+  requireAttendanceReport?: boolean | null;
+  themeColor?: string | null;
+  isSeries?: boolean;
 };
 
 export type UpdateShiftPayload = Partial<CreateShiftPayload> & {

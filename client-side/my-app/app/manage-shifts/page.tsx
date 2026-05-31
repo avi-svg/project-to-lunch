@@ -6,18 +6,18 @@ import { authOptions } from "@/auth";
 const actions = [
   {
     href: "/manage-shifts/create",
-    eyebrow: "יצירת תורנות",
-    title: "פתיחת תורנות חדשה",
+    eyebrow: "יצירת אירוע",
+    title: "פתיחת אירוע חדש",
     description:
-      "מעבר לטופס המלא של יצירת התורנות, עם כל השדות והאפשרות לשמור או להמשיך לשיוך משתמשים.",
+      "מעבר לטופס המלא של יצירת האירוע, עם כל השדות והאפשרות לשמור או להמשיך לשיוך משתמשים.",
     accent: "from-stone-900 via-stone-800 to-stone-700",
   },
   {
     href: "/manage-shifts/manage",
-    eyebrow: "ניהול תורנויות",
+    eyebrow: "ניהול אירועים",
     title: "כניסה למסך הניהול",
     description:
-      "עמוד ייעודי לניהול תורנויות, שממנו נמשיך להגדיר את תצוגת הניהול והפעולות הרלוונטיות.",
+      "עמוד ייעודי לניהול אירועים, שממנו נמשיך להגדיר את תצוגת הניהול והפעולות הרלוונטיות.",
     accent: "from-amber-700 via-amber-600 to-orange-500",
   },
 ] as const;
@@ -54,14 +54,14 @@ export default async function ManageShiftsPage() {
         <section className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
           <div className="bg-[linear-gradient(140deg,#1c1917,#44403c)] px-8 py-10 text-white">
             <p className="text-sm font-semibold tracking-[0.25em] text-stone-300">
-              תורנויות ופעילויות
+              אירועים ופעילויות
             </p>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight">
               לאן ממשיכים מכאן?
             </h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
-              פיצלנו את המסך לשני מסלולים ברורים: יצירת תורנות חדשה או כניסה למסך
-              ניהול תורנויות נפרד.
+              פיצלנו את המסך לשני מסלולים ברורים: יצירת אירוע חדש או כניסה למסך
+              ניהול אירועים נפרד.
             </p>
           </div>
 
