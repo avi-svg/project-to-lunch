@@ -4301,10 +4301,52 @@ async function getStaffDashboardSummary(req, res, next) {
         [threeMonthsAgo.toISOString()]
       ),
       db.query(
-        `SELECT status, COUNT(*) AS count
-         FROM public.shifts
-         WHERE start_time >= $1
-         GROUP BY status`,
+        `WITH shift_attendance_summary AS (
+           SELECT sa.shift_id,
+             COUNT(*) FILTER (WHERE sa.status = 'pending') AS pending_count
+           FROM public.shift_attendance sa
+           GROUP BY sa.shift_id
+         ),
+         shift_reg_summary AS (
+           SELECT sr.shift_id,
+             COUNT(*) FILTER (WHERE sr.status = 'approved') AS approved_reg_count,
+             COUNT(*) FILTER (WHERE sr.status = 'pending') AS pending_reg_count,
+             COUNT(*) FILTER (WHERE sr.status IN ('approved', 'pending')) AS active_reg_count
+           FROM public.shift_registrations sr
+           GROUP BY sr.shift_id
+         ),
+         missing_att_shifts AS (
+           SELECT DISTINCT sr.shift_id
+           FROM public.shift_registrations sr
+           LEFT JOIN public.shift_attendance sa ON sa.registration_id = sr.id
+           WHERE sr.status = 'approved' AND sa.id IS NULL
+         ),
+         computed AS (
+           SELECT
+             CASE
+               WHEN s.status = 'cancelled' THEN 'cancelled'
+               WHEN s.start_time - INTERVAL '15 minutes' <= NOW() AND s.end_time >= NOW() THEN 'in_progress'
+               WHEN s.end_time < NOW() THEN
+                 CASE
+                   WHEN COALESCE(ats.pending_count, 0) = 0
+                     AND (s.require_attendance_report IS NOT TRUE OR ma.shift_id IS NULL)
+                   THEN 'ended_complete'
+                   ELSE 'ended_incomplete'
+                 END
+               WHEN COALESCE(rrs.active_reg_count, 0) = 0 THEN 'not_assigned'
+               WHEN COALESCE(rrs.approved_reg_count, 0) = s.capacity
+                 AND COALESCE(rrs.pending_reg_count, 0) = 0 THEN 'fully_assigned'
+               ELSE 'partially_assigned'
+             END AS computed_status
+           FROM public.shifts s
+           LEFT JOIN shift_attendance_summary ats ON ats.shift_id = s.id
+           LEFT JOIN shift_reg_summary rrs ON rrs.shift_id = s.id
+           LEFT JOIN missing_att_shifts ma ON ma.shift_id = s.id
+           WHERE s.start_time >= $1
+         )
+         SELECT computed_status AS status, COUNT(*) AS count
+         FROM computed
+         GROUP BY computed_status`,
         [threeMonthsAgo.toISOString()]
       ),
       db.query(

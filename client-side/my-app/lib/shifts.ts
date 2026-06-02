@@ -221,10 +221,19 @@ export type StaffDashboardShift = {
   endTime: string;
 };
 
+export type ShiftComputedStatus =
+  | "in_progress"
+  | "ended_complete"
+  | "ended_incomplete"
+  | "not_assigned"
+  | "partially_assigned"
+  | "fully_assigned"
+  | "cancelled";
+
 export type StaffDashboardSummary = {
   shiftsWithPendingAttendance: (StaffDashboardShift & { pendingCount: number })[];
   shiftsWithMissingAttendance: (StaffDashboardShift & { missingCount: number; totalApproved: number })[];
-  shiftStatusCounts: Partial<Record<ShiftStatus, number>>;
+  shiftStatusCounts: Partial<Record<ShiftComputedStatus, number>>;
   swapRequestCounts: Record<string, number>;
 };
 

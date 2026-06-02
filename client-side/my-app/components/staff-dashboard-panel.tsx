@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { StaffDashboardSummary, ShiftStatus } from "@/lib/shifts";
+import type { StaffDashboardSummary, ShiftComputedStatus } from "@/lib/shifts";
 
 const DISPLAY_TIME_ZONE = "Asia/Jerusalem";
 
@@ -11,19 +11,31 @@ function formatShortDate(iso: string) {
   }).format(new Date(iso));
 }
 
-const statusLabels: Record<ShiftStatus, string> = {
-  open: "פתוחות",
-  closed: "סגורות",
-  cancelled: "מבוטלות",
-  completed: "הושלמו",
+type StatusConfig = {
+  label: string;
+  color: string;
+  linkLabel?: string;
 };
 
-const statusColors: Record<ShiftStatus, string> = {
-  open: "bg-emerald-100 text-emerald-800",
-  closed: "bg-amber-100 text-amber-800",
-  cancelled: "bg-red-100 text-red-800",
-  completed: "bg-stone-100 text-stone-700",
+const statusConfig: Record<ShiftComputedStatus, StatusConfig> = {
+  in_progress:        { label: "בתהליך",                  color: "bg-sky-100 text-sky-800" },
+  ended_incomplete:   { label: "הסתיימה אך טרם הושלמה",  color: "bg-amber-100 text-amber-800", linkLabel: "לטיפול" },
+  ended_complete:     { label: "הסתיימה והושלמה",         color: "bg-emerald-100 text-emerald-800" },
+  fully_assigned:     { label: "שובצה ואושרה",            color: "bg-emerald-100 text-emerald-800" },
+  partially_assigned: { label: "שובצה חלקית",             color: "bg-amber-100 text-amber-800", linkLabel: "לשיבוץ" },
+  not_assigned:       { label: "טרם שובצה",               color: "bg-rose-100 text-rose-800",   linkLabel: "לשיבוץ" },
+  cancelled:          { label: "בוטלה",                   color: "bg-stone-100 text-stone-500" },
 };
+
+const statusOrder: ShiftComputedStatus[] = [
+  "in_progress",
+  "ended_incomplete",
+  "not_assigned",
+  "partially_assigned",
+  "fully_assigned",
+  "ended_complete",
+  "cancelled",
+];
 
 type Props = {
   data: StaffDashboardSummary | null;
@@ -38,11 +50,15 @@ export function StaffDashboardPanel({ data }: Props) {
     );
   }
 
-  const { shiftsWithPendingAttendance, shiftsWithMissingAttendance, shiftStatusCounts, swapRequestCounts } = data;
+  const {
+    shiftsWithPendingAttendance,
+    shiftsWithMissingAttendance,
+    shiftStatusCounts,
+    swapRequestCounts,
+  } = data;
 
   const totalSwapRequests = Object.values(swapRequestCounts).reduce((a, b) => a + b, 0);
   const pendingSwapRequests = swapRequestCounts["pending"] ?? 0;
-
   const hasPendingAttendance = shiftsWithPendingAttendance.length > 0;
   const hasMissingAttendance = shiftsWithMissingAttendance.length > 0;
   const hasAttentionItems = hasPendingAttendance || hasMissingAttendance;
@@ -83,7 +99,7 @@ export function StaffDashboardPanel({ data }: Props) {
             {hasPendingAttendance && (
               <div className="px-6 py-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-stone-400">
-                  ממתינים לאישור
+                  ממתינים לאישור צוות
                 </p>
                 <ul className="space-y-2">
                   {shiftsWithPendingAttendance.map((shift) => (
@@ -92,7 +108,7 @@ export function StaffDashboardPanel({ data }: Props) {
                         <span className="truncate text-sm font-medium text-stone-900">
                           {shift.title}
                         </span>
-                        <span className="ml-2 text-xs text-stone-500">{formatShortDate(shift.startTime)}</span>
+                        <span className="mr-2 text-xs text-stone-500">{formatShortDate(shift.startTime)}</span>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
@@ -114,7 +130,7 @@ export function StaffDashboardPanel({ data }: Props) {
             {hasMissingAttendance && (
               <div className="px-6 py-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-stone-400">
-                  נוכחות שטרם סומנה
+                  חלון הדיווח עבר — נדרש דיווח ידני
                 </p>
                 <ul className="space-y-2">
                   {shiftsWithMissingAttendance.map((shift) => (
@@ -123,17 +139,17 @@ export function StaffDashboardPanel({ data }: Props) {
                         <span className="truncate text-sm font-medium text-stone-900">
                           {shift.title}
                         </span>
-                        <span className="ml-2 text-xs text-stone-500">{formatShortDate(shift.startTime)}</span>
+                        <span className="mr-2 text-xs text-stone-500">{formatShortDate(shift.startTime)}</span>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-800">
-                          {shift.missingCount}/{shift.totalApproved} לא סומנו
+                          {shift.missingCount}/{shift.totalApproved} לא דיווחו
                         </span>
                         <Link
                           href={`/manage-shifts/${shift.id}`}
                           className="rounded-xl border border-stone-300 bg-white px-3 py-1 text-xs font-medium text-stone-900 transition hover:border-stone-900"
                         >
-                          לסימון
+                          לדיווח ידני
                         </Link>
                       </div>
                     </li>
@@ -145,7 +161,7 @@ export function StaffDashboardPanel({ data }: Props) {
         )}
       </div>
 
-      {/* Shift status counts + swap requests side by side */}
+      {/* Shift status counts + swap requests */}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
           <div className="border-b border-stone-100 px-6 py-4">
@@ -155,21 +171,23 @@ export function StaffDashboardPanel({ data }: Props) {
             </div>
           </div>
           <ul className="divide-y divide-stone-100">
-            {(["open", "closed", "completed", "cancelled"] as ShiftStatus[]).map((status) => {
+            {statusOrder.map((status) => {
               const count = shiftStatusCounts[status] ?? 0;
+              if (count === 0) return null;
+              const config = statusConfig[status];
               return (
                 <li key={status} className="flex items-center justify-between gap-3 px-6 py-3">
-                  <span className="text-sm text-stone-700">{statusLabels[status]}</span>
+                  <span className="text-sm text-stone-700">{config.label}</span>
                   <div className="flex items-center gap-2">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusColors[status]}`}>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${config.color}`}>
                       {count}
                     </span>
-                    {(status === "open" || status === "closed") && count > 0 && (
+                    {config.linkLabel && (
                       <Link
                         href="/manage-shifts/manage"
                         className="text-xs font-medium text-stone-400 transition hover:text-stone-900"
                       >
-                        לניהול
+                        {config.linkLabel}
                       </Link>
                     )}
                   </div>
@@ -191,14 +209,14 @@ export function StaffDashboardPanel({ data }: Props) {
               </Link>
             </div>
           </div>
-          <div className="px-6 py-4 space-y-3">
+          <div className="space-y-3 px-6 py-4">
             <div className="flex items-center justify-between">
               <span className="text-sm text-stone-700">סה״כ בקשות</span>
               <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-semibold text-stone-700">
                 {totalSwapRequests}
               </span>
             </div>
-            {pendingSwapRequests > 0 && (
+            {pendingSwapRequests > 0 ? (
               <div className="flex items-center justify-between">
                 <span className="text-sm text-stone-700">ממתינות לטיפול</span>
                 <div className="flex items-center gap-2">
@@ -213,8 +231,7 @@ export function StaffDashboardPanel({ data }: Props) {
                   </Link>
                 </div>
               </div>
-            )}
-            {pendingSwapRequests === 0 && (
+            ) : (
               <p className="text-sm text-stone-500">אין בקשות ממתינות.</p>
             )}
           </div>
