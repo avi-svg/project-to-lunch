@@ -65,15 +65,6 @@ const quickActions: readonly QuickAction[] = [
       "המשתמשים מדווחים על נוכחות החל מחמש דקות לפני תחילת התורנות ועד סיומה, והצוות מאשר את הרשימה לאחר מכן.",
     accent: "from-sky-800 via-cyan-700 to-teal-500",
   },
-  {
-    href: "/manage-shifts",
-    eyebrow: "צוות",
-    title: "ניהול תורנויות",
-    description:
-      "לצוות: יצירה, ניהול ושיבוץ תורנויות ופעילויות מתוך מסכי הניהול הייעודיים.",
-    accent: "from-emerald-700 via-emerald-600 to-lime-500",
-    staffOnly: true,
-  },
 ];
 
 function getNavigationLinks(userRole: UserRole) {
