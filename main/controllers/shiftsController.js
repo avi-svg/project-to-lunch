@@ -1811,7 +1811,42 @@ async function listShiftAssignmentPools(req, res, next) {
                  )
              ))
            )
-         END AS has_recent_attendance
+         END AS has_recent_attendance,
+         COALESCE(
+           (
+             SELECT s.start_time
+             FROM public.shift_registrations sr
+             JOIN public.shifts s ON s.id = sr.shift_id
+             WHERE sr.user_id = u.id
+               AND sr.status IN ('pending', 'approved')
+               AND sr.created_at >= $2
+               AND s.start_time > NOW()
+               AND $1 IS NOT NULL
+               AND (
+                 ($1 = 'dinner' AND (s.category = $3 OR s.title = $4))
+                 OR
+                 ($1 = 'cleaning' AND (s.category = $5 OR s.title = $6))
+               )
+             ORDER BY s.start_time ASC
+             LIMIT 1
+           ),
+           (
+             SELECT s.start_time
+             FROM public.shift_attendance sa
+             JOIN public.shifts s ON s.id = sa.shift_id
+             WHERE sa.user_id = u.id
+               AND sa.status = 'approved'
+               AND sa.report_source != 'staff-absent'
+               AND s.start_time >= $2
+               AND (
+                 (s.category = $3 OR s.title = $4)
+                 OR
+                 ($1 = 'cleaning' AND (s.category = $5 OR s.title = $6))
+               )
+             ORDER BY s.start_time DESC
+             LIMIT 1
+           )
+         ) AS recent_shift_date
        FROM public.users u
        WHERE u.role = 'user'
        ORDER BY COALESCE(NULLIF(TRIM(u.name), ''), u.email) ASC, u.email ASC`,
@@ -1837,6 +1872,7 @@ async function listShiftAssignmentPools(req, res, next) {
         phone: row.phone,
         birthDate: row.birthDate,
         isActive: row.isActive,
+        recentShiftDate: row.recent_shift_date ? new Date(row.recent_shift_date).toISOString() : null,
       };
 
       if (row.has_recent_attendance) {

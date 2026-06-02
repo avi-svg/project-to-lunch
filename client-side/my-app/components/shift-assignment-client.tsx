@@ -860,7 +860,11 @@ export function ShiftAssignmentClient({
                   </p>
                   <p className="mt-1 text-sm text-stone-600">{user.email}</p>
                   <p className="mt-1 text-xs text-amber-800">
-                    כבר שובץ החודש ל{formatShiftTypeLabel(shift.shiftType)}
+                    {user.recentShiftDate
+                      ? new Date(user.recentShiftDate) > new Date()
+                        ? `משובץ ל-${formatDateTime(user.recentShiftDate)}`
+                        : `נוכח ב-${formatDateTime(user.recentShiftDate)}`
+                      : `נוכח / משובץ ב-30 יום האחרונים`}
                   </p>
                 </article>
               ))

@@ -34,6 +34,7 @@ export type ShiftAssignmentPoolUser = {
   phone?: string | null;
   birthDate?: string | null;
   isActive?: boolean;
+  recentShiftDate?: string | null;
 };
 
 export type ShiftActor = {
