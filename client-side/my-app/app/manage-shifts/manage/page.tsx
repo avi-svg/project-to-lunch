@@ -359,8 +359,9 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
               ניהול מפורט עם משתתפים, פרטים, עריכה ושיבוצים.
             </p>
           </div>
+        </section>
 
-          <div className="relative z-10 flex flex-col gap-4 border-t border-stone-200 bg-stone-50 p-6">
+        <div className="sticky top-0 z-20 flex flex-col gap-4 rounded-[2rem] border border-stone-200 bg-white/95 p-6 shadow-sm backdrop-blur-sm">
             <div className="relative z-10 flex flex-wrap gap-3">
               <CalendarNavButton
                 action="/manage-shifts/manage"
@@ -443,8 +444,7 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
                 {view === "month" ? "החודש הבא" : "השבוע הבא"}
               </CalendarNavButton>
             </div>
-          </div>
-        </section>
+        </div>
 
         {debugEnabled ? (
           <section className="rounded-[2rem] border border-amber-300 bg-amber-50 p-6 text-sm text-amber-950">

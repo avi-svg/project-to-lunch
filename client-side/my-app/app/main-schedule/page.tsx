@@ -364,8 +364,9 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
               פחות פרטים, כדי לקבל מבט רחב ומהיר על כל הפעילויות.
             </p>
           </div>
+        </section>
 
-          <div className="relative z-10 flex flex-col gap-4 border-t border-stone-200 bg-stone-50 p-6">
+        <div className="sticky top-0 z-20 flex flex-col gap-4 rounded-[2rem] border border-stone-200 bg-white/95 p-6 shadow-sm backdrop-blur-sm">
             <div className="relative z-10 flex flex-wrap gap-3">
               <CalendarNavButton
                 action="/main-schedule"
@@ -442,8 +443,7 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                 {view === "month" ? "חודש הבא" : "שבוע הבא"}
               </CalendarNavButton>
             </div>
-          </div>
-        </section>
+        </div>
 
         {debugEnabled ? (
           <section className="rounded-[2rem] border border-amber-300 bg-amber-50 p-6 text-sm text-amber-950">
