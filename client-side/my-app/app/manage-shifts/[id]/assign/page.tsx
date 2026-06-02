@@ -8,8 +8,7 @@ import {
   fetchShiftAssignmentPoolsForUser,
   fetchShiftByIdForUser,
 } from "@/lib/server-shifts";
-import type { BackendDirectoryUser } from "@/lib/server-users";
-import type { Shift } from "@/lib/shifts";
+import type { Shift, ShiftAssignmentPoolUser } from "@/lib/shifts";
 
 type PageProps = {
   params: Promise<{
@@ -30,8 +29,8 @@ export default async function ManageShiftAssignmentPage({ params }: PageProps) {
 
   const { id } = await params;
   let shift: Shift | null = null;
-  let defaultUsers: BackendDirectoryUser[] = [];
-  let alreadyAssignedUsers: BackendDirectoryUser[] = [];
+  let defaultUsers: ShiftAssignmentPoolUser[] = [];
+  let alreadyAssignedUsers: ShiftAssignmentPoolUser[] = [];
   let errorMessage = "";
 
   try {

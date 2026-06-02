@@ -210,8 +210,6 @@ export type ReplaceShiftAssignmentsResponse = {
 
 export type ShiftAssignmentPoolsResponse = {
   shiftType: ShiftType | null;
-  monthStart: string | null;
-  monthEnd: string | null;
   defaultUsers: ShiftAssignmentPoolUser[];
   alreadyAssignedUsers: ShiftAssignmentPoolUser[];
 };

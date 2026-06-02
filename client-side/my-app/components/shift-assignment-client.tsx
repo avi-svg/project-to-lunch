@@ -5,17 +5,17 @@ import {
   getShiftAssignmentPools,
   replaceShiftAssignments,
   type Shift,
+  type ShiftAssignmentPoolUser,
   type ShiftAssignmentRequestType,
   type ShiftAssignmentTypesByUserId,
   type ShiftRegistrationStatus,
   type ReplaceShiftAssignmentsResponse,
 } from "@/lib/shifts";
-import type { BackendDirectoryUser } from "@/lib/server-users";
 
 type Props = {
   shift: Shift;
-  defaultUsers: BackendDirectoryUser[];
-  alreadyAssignedUsers: BackendDirectoryUser[];
+  defaultUsers: ShiftAssignmentPoolUser[];
+  alreadyAssignedUsers: ShiftAssignmentPoolUser[];
 };
 
 type DragPayload =
@@ -177,9 +177,9 @@ export function ShiftAssignmentClient({
   const [savedAssignmentSignature, setSavedAssignmentSignature] = useState(
     buildAssignmentSignature(initialAssignedUsers),
   );
-  const [poolDefaultUsers, setPoolDefaultUsers] = useState<BackendDirectoryUser[]>(defaultUsers);
+  const [poolDefaultUsers, setPoolDefaultUsers] = useState<ShiftAssignmentPoolUser[]>(defaultUsers);
   const [poolAlreadyAssignedUsers, setPoolAlreadyAssignedUsers] =
-    useState<BackendDirectoryUser[]>(alreadyAssignedUsers);
+    useState<ShiftAssignmentPoolUser[]>(alreadyAssignedUsers);
   const [assignedUsers, setAssignedUsers] = useState<AssignedUser[]>(initialAssignedUsers);
   const [activeDropZone, setActiveDropZone] = useState<"pool" | "assigned" | null>(null);
   const [feedback, setFeedback] = useState<{
@@ -202,7 +202,7 @@ export function ShiftAssignmentClient({
     [assignedUsers, savedAssignmentSignature],
   );
   const allPoolUsers = useMemo(() => {
-    const usersById = new Map<string, BackendDirectoryUser>();
+    const usersById = new Map<string, ShiftAssignmentPoolUser>();
 
     for (const user of [...poolDefaultUsers, ...poolAlreadyAssignedUsers]) {
       usersById.set(user.id, user);
