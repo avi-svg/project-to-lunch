@@ -398,6 +398,18 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
               </CalendarNavButton>
             </div>
           }
+          dateDisplay={
+            <div className="px-1 py-1">
+              <p className="text-xs text-stone-500">
+                {view === "month" ? "החודש המוצג" : "השבוע המוצג"}
+              </p>
+              <p className="mt-0.5 text-lg font-semibold text-stone-900">
+                {view === "month"
+                  ? formatMonthLabel(monthStart)
+                  : formatWeekRange(weekStart)}
+              </p>
+            </div>
+          }
           navRow={
             <div className="relative z-10 grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
               <CalendarNavButton
