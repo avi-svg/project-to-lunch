@@ -1789,7 +1789,7 @@ async function listShiftAssignmentPools(req, res, next) {
                  AND sa.report_source != 'staff-absent'
                  AND s.start_time >= $2
                  AND (
-                   (s.category = $3 OR s.title = $4)
+                   ($1 = 'dinner' AND (s.category = $3 OR s.title = $4))
                    OR
                    ($1 = 'cleaning' AND (s.category = $5 OR s.title = $6))
                  )
@@ -1839,7 +1839,7 @@ async function listShiftAssignmentPools(req, res, next) {
                AND sa.report_source != 'staff-absent'
                AND s.start_time >= $2
                AND (
-                 (s.category = $3 OR s.title = $4)
+                 ($1 = 'dinner' AND (s.category = $3 OR s.title = $4))
                  OR
                  ($1 = 'cleaning' AND (s.category = $5 OR s.title = $6))
                )
