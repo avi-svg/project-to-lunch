@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { AppSessionProvider } from "@/components/session-provider";
+import { DashboardFab } from "@/components/dashboard-fab";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,7 +17,10 @@ export default function RootLayout({
   return (
     <html lang="he" dir="rtl" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        <AppSessionProvider>{children}</AppSessionProvider>
+        <AppSessionProvider>
+          {children}
+          <DashboardFab />
+        </AppSessionProvider>
       </body>
     </html>
   );
