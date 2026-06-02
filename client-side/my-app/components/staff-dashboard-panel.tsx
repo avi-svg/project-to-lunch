@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import type { StaffDashboardSummary, ShiftComputedStatus } from "@/lib/shifts";
 
@@ -42,6 +45,8 @@ type Props = {
 };
 
 export function StaffDashboardPanel({ data }: Props) {
+  const [expandedStatus, setExpandedStatus] = useState<ShiftComputedStatus | null>(null);
+
   if (!data) {
     return (
       <section className="rounded-[2rem] border border-red-200 bg-red-50 p-6 text-sm text-red-700">
@@ -54,6 +59,7 @@ export function StaffDashboardPanel({ data }: Props) {
     shiftsWithPendingAttendance,
     shiftsWithMissingAttendance,
     shiftStatusCounts,
+    shiftsByStatus,
     swapRequestCounts,
   } = data;
 
@@ -175,22 +181,53 @@ export function StaffDashboardPanel({ data }: Props) {
               const count = shiftStatusCounts[status] ?? 0;
               if (count === 0) return null;
               const config = statusConfig[status];
+              const shifts = shiftsByStatus?.[status] ?? [];
+              const isExpanded = expandedStatus === status;
+
               return (
-                <li key={status} className="flex items-center justify-between gap-3 px-6 py-3">
-                  <span className="text-sm text-stone-700">{config.label}</span>
-                  <div className="flex items-center gap-2">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${config.color}`}>
-                      {count}
-                    </span>
-                    {config.linkLabel && (
-                      <Link
-                        href="/manage-shifts/manage"
-                        className="text-xs font-medium text-stone-400 transition hover:text-stone-900"
+                <li key={status}>
+                  <button
+                    onClick={() => setExpandedStatus(isExpanded ? null : status)}
+                    className="flex w-full items-center justify-between gap-3 px-6 py-3 transition hover:bg-stone-50"
+                  >
+                    <span className="text-sm text-stone-700">{config.label}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${config.color}`}>
+                        {count}
+                      </span>
+                      <span
+                        className="text-xs text-stone-400 transition-transform"
+                        style={{ display: "inline-block", transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)" }}
                       >
-                        {config.linkLabel}
-                      </Link>
-                    )}
-                  </div>
+                        ▾
+                      </span>
+                    </div>
+                  </button>
+
+                  {isExpanded && shifts.length > 0 && (
+                    <div className="border-t border-stone-100 bg-stone-50 px-6 py-3">
+                      <ul className="space-y-2">
+                        {shifts.map((shift) => (
+                          <li key={shift.id} className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <span className="truncate text-sm font-medium text-stone-900">
+                                {shift.title}
+                              </span>
+                              <span className="mr-2 text-xs text-stone-500">
+                                {formatShortDate(shift.startTime)}
+                              </span>
+                            </div>
+                            <Link
+                              href={`/manage-shifts/${shift.id}`}
+                              className="shrink-0 rounded-xl border border-stone-300 bg-white px-3 py-1 text-xs font-medium text-stone-900 transition hover:border-stone-900"
+                            >
+                              לניהול ←
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </li>
               );
             })}

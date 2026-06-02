@@ -4319,32 +4319,32 @@ async function getStaffDashboardSummary(req, res, next) {
            FROM public.shift_registrations sr
            LEFT JOIN public.shift_attendance sa ON sa.registration_id = sr.id
            WHERE sr.status = 'approved' AND sa.id IS NULL
-         ),
-         computed AS (
-           SELECT
-             CASE
-               WHEN s.status = 'cancelled' THEN 'cancelled'
-               WHEN s.start_time - INTERVAL '15 minutes' <= NOW() AND s.end_time >= NOW() THEN 'in_progress'
-               WHEN s.end_time < NOW() THEN
-                 CASE
-                   WHEN COALESCE(ats.pending_count, 0) = 0 AND ma.shift_id IS NULL
-                   THEN 'ended_complete'
-                   ELSE 'ended_incomplete'
-                 END
-               WHEN COALESCE(rrs.active_reg_count, 0) = 0 THEN 'not_assigned'
-               WHEN COALESCE(rrs.approved_reg_count, 0) = s.capacity
-                 AND COALESCE(rrs.pending_reg_count, 0) = 0 THEN 'fully_assigned'
-               ELSE 'partially_assigned'
-             END AS computed_status
-           FROM public.shifts s
-           LEFT JOIN shift_attendance_summary ats ON ats.shift_id = s.id
-           LEFT JOIN shift_reg_summary rrs ON rrs.shift_id = s.id
-           LEFT JOIN missing_att_shifts ma ON ma.shift_id = s.id
-           WHERE s.start_time >= $1
          )
-         SELECT computed_status AS status, COUNT(*) AS count
-         FROM computed
-         GROUP BY computed_status`,
+         SELECT
+           s.id,
+           s.title,
+           s.start_time,
+           s.end_time,
+           CASE
+             WHEN s.status = 'cancelled' THEN 'cancelled'
+             WHEN s.start_time - INTERVAL '15 minutes' <= NOW() AND s.end_time >= NOW() THEN 'in_progress'
+             WHEN s.end_time < NOW() THEN
+               CASE
+                 WHEN COALESCE(ats.pending_count, 0) = 0 AND ma.shift_id IS NULL
+                 THEN 'ended_complete'
+                 ELSE 'ended_incomplete'
+               END
+             WHEN COALESCE(rrs.active_reg_count, 0) = 0 THEN 'not_assigned'
+             WHEN COALESCE(rrs.approved_reg_count, 0) = s.capacity
+               AND COALESCE(rrs.pending_reg_count, 0) = 0 THEN 'fully_assigned'
+             ELSE 'partially_assigned'
+           END AS computed_status
+         FROM public.shifts s
+         LEFT JOIN shift_attendance_summary ats ON ats.shift_id = s.id
+         LEFT JOIN shift_reg_summary rrs ON rrs.shift_id = s.id
+         LEFT JOIN missing_att_shifts ma ON ma.shift_id = s.id
+         WHERE s.start_time >= $1
+         ORDER BY s.start_time DESC`,
         [threeMonthsAgo.toISOString()]
       ),
       db.query(
@@ -4355,8 +4355,16 @@ async function getStaffDashboardSummary(req, res, next) {
     ]);
 
     const shiftStatusCounts = {};
+    const shiftsByStatus = {};
     for (const row of shiftStatusResult.rows) {
-      shiftStatusCounts[row.status] = Number(row.count);
+      shiftStatusCounts[row.computed_status] = (shiftStatusCounts[row.computed_status] || 0) + 1;
+      if (!shiftsByStatus[row.computed_status]) shiftsByStatus[row.computed_status] = [];
+      shiftsByStatus[row.computed_status].push({
+        id: row.id,
+        title: row.title,
+        startTime: new Date(row.start_time).toISOString(),
+        endTime: new Date(row.end_time).toISOString(),
+      });
     }
 
     const swapRequestCounts = {};
@@ -4381,6 +4389,7 @@ async function getStaffDashboardSummary(req, res, next) {
         totalApproved: Number(row.total_approved),
       })),
       shiftStatusCounts,
+      shiftsByStatus,
       swapRequestCounts,
     });
   } catch (error) {

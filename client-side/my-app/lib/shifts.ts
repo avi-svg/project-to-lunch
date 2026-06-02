@@ -234,6 +234,7 @@ export type StaffDashboardSummary = {
   shiftsWithPendingAttendance: (StaffDashboardShift & { pendingCount: number })[];
   shiftsWithMissingAttendance: (StaffDashboardShift & { missingCount: number; totalApproved: number })[];
   shiftStatusCounts: Partial<Record<ShiftComputedStatus, number>>;
+  shiftsByStatus: Partial<Record<ShiftComputedStatus, StaffDashboardShift[]>>;
   swapRequestCounts: Record<string, number>;
 };
 
