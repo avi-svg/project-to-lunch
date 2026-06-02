@@ -12,6 +12,7 @@ import {
   ShiftSwapRequest,
   ShiftSwapRequestsResponse,
   ShiftRegistration,
+  StaffDashboardSummary,
   UpdateShiftSwapVolunteerOfferPayload,
   UpdateShiftSwapRequestPayload,
   UpdateRegistrationPayload,
@@ -99,6 +100,10 @@ export async function fetchShiftAttendanceDashboardForUser(userId: string) {
     userId,
     "/shifts/attendance",
   );
+}
+
+export async function fetchStaffDashboardForUser(userId: string) {
+  return backendShiftsFetch<StaffDashboardSummary>(userId, "/shifts/staff-dashboard");
 }
 
 export async function fetchShiftSwapRequestsForUser(userId: string) {

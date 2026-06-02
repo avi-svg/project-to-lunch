@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { signOut } from "next-auth/react";
+import type { ReactNode } from "react";
 import type { UserRole } from "@/lib/shifts";
 
 type Props = {
   userName: string;
   userRole: UserRole;
+  staffPanel?: ReactNode;
 };
 
 type NavigationLink = {
@@ -113,7 +115,7 @@ function formatRole(role: UserRole) {
   return "משתמש";
 }
 
-export function DashboardClient({ userName, userRole }: Props) {
+export function DashboardClient({ userName, userRole, staffPanel }: Props) {
   const isStaffUser = userRole === "staff" || userRole === "admin";
 
   return (
@@ -200,6 +202,8 @@ export function DashboardClient({ userName, userRole }: Props) {
               </Link>
             ))}
           </div>
+
+          {staffPanel ? staffPanel : null}
         </section>
       </div>
     </main>

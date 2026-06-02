@@ -9,6 +9,7 @@ router.get('/week', shiftsController.listWeekShifts);
 router.get('/mine', shiftsController.listMyRegisteredShifts);
 router.get('/attendance', shiftsController.listShiftAttendance);
 router.get('/swap-requests', shiftsController.listSwapRequests);
+router.get('/staff-dashboard', shiftsController.getStaffDashboardSummary);
 router.get('/:id/notes', shiftsController.listShiftNotes);
 router.patch(
   '/swap-requests/:requestId',

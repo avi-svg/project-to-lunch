@@ -214,6 +214,20 @@ export type ShiftAssignmentPoolsResponse = {
   alreadyAssignedUsers: ShiftAssignmentPoolUser[];
 };
 
+export type StaffDashboardShift = {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+};
+
+export type StaffDashboardSummary = {
+  shiftsWithPendingAttendance: (StaffDashboardShift & { pendingCount: number })[];
+  shiftsWithMissingAttendance: (StaffDashboardShift & { missingCount: number; totalApproved: number })[];
+  shiftStatusCounts: Partial<Record<ShiftStatus, number>>;
+  swapRequestCounts: Record<string, number>;
+};
+
 export type CreateShiftPayload = {
   title: string;
   shiftType?: ShiftType;

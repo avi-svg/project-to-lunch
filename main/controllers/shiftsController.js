@@ -4259,6 +4259,95 @@ async function addUserAttendance(req, res, next) {
   }
 }
 
+async function getStaffDashboardSummary(req, res, next) {
+  if (!isStaffLike(req.actor.role)) {
+    return res.status(403).json({ message: 'Only staff users can access the staff dashboard.' });
+  }
+
+  try {
+    const threeMonthsAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+    const [pendingAttendanceResult, missingAttendanceResult, shiftStatusResult, swapRequestResult] = await Promise.all([
+      db.query(
+        `SELECT s.id, s.title, s.start_time, s.end_time,
+           COUNT(att.id) AS pending_count
+         FROM public.shifts s
+         JOIN public.shift_attendance att ON att.shift_id = s.id
+         WHERE att.status = 'pending'
+           AND s.start_time >= $1
+           AND s.status != 'cancelled'
+         GROUP BY s.id, s.title, s.start_time, s.end_time
+         ORDER BY s.start_time DESC
+         LIMIT 10`,
+        [threeMonthsAgo.toISOString()]
+      ),
+      db.query(
+        `SELECT s.id, s.title, s.start_time, s.end_time,
+           COUNT(sr.id) FILTER (WHERE att.id IS NULL) AS missing_count,
+           COUNT(sr.id) AS total_approved
+         FROM public.shifts s
+         JOIN public.shift_registrations sr
+           ON sr.shift_id = s.id AND sr.status = 'approved'
+         LEFT JOIN public.shift_attendance att
+           ON att.registration_id = sr.id
+         WHERE s.end_time < NOW()
+           AND s.start_time >= $1
+           AND s.status != 'cancelled'
+           AND s.require_attendance_report = true
+         GROUP BY s.id, s.title, s.start_time, s.end_time
+         HAVING COUNT(sr.id) FILTER (WHERE att.id IS NULL) > 0
+         ORDER BY s.start_time DESC
+         LIMIT 10`,
+        [threeMonthsAgo.toISOString()]
+      ),
+      db.query(
+        `SELECT status, COUNT(*) AS count
+         FROM public.shifts
+         WHERE start_time >= $1
+         GROUP BY status`,
+        [threeMonthsAgo.toISOString()]
+      ),
+      db.query(
+        `SELECT status, COUNT(*) AS count
+         FROM public.shift_swap_requests
+         GROUP BY status`
+      ),
+    ]);
+
+    const shiftStatusCounts = {};
+    for (const row of shiftStatusResult.rows) {
+      shiftStatusCounts[row.status] = Number(row.count);
+    }
+
+    const swapRequestCounts = {};
+    for (const row of swapRequestResult.rows) {
+      swapRequestCounts[row.status] = Number(row.count);
+    }
+
+    return res.json({
+      shiftsWithPendingAttendance: pendingAttendanceResult.rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        startTime: new Date(row.start_time).toISOString(),
+        endTime: new Date(row.end_time).toISOString(),
+        pendingCount: Number(row.pending_count),
+      })),
+      shiftsWithMissingAttendance: missingAttendanceResult.rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        startTime: new Date(row.start_time).toISOString(),
+        endTime: new Date(row.end_time).toISOString(),
+        missingCount: Number(row.missing_count),
+        totalApproved: Number(row.total_approved),
+      })),
+      shiftStatusCounts,
+      swapRequestCounts,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   approveAttendance,
   approveRegistration,
@@ -4270,6 +4359,7 @@ module.exports = {
   createShift,
   deleteShift,
   getShiftById,
+  getStaffDashboardSummary,
   listShiftNotes,
   listShiftAttendance,
   listShiftAssignmentPools,
