@@ -7,6 +7,7 @@ import { BackendShiftsError, fetchWeekShiftsForUser } from "@/lib/server-shifts"
 import type { Shift, ShiftRegistrationStatus } from "@/lib/shifts";
 import { getShiftColorTheme, getShiftCardStyle, getShiftDotStyle, getShiftBadgeStyle } from "@/lib/shift-colors";
 import type { ReactNode } from "react";
+import { StickyCalendarHeader } from "@/components/sticky-calendar-header";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -366,7 +367,8 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
           </div>
         </section>
 
-        <div className="sticky top-0 z-20 flex flex-col gap-4 rounded-[2rem] border border-stone-200 bg-white/95 p-6 shadow-sm backdrop-blur-sm">
+        <StickyCalendarHeader
+          viewButtons={
             <div className="relative z-10 flex flex-wrap gap-3">
               <CalendarNavButton
                 action="/main-schedule"
@@ -395,7 +397,8 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                 תצוגה חודשית
               </CalendarNavButton>
             </div>
-
+          }
+          navRow={
             <div className="relative z-10 grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
               <CalendarNavButton
                 action="/main-schedule"
@@ -443,7 +446,8 @@ export default async function MainSchedulePage({ searchParams }: PageProps) {
                 {view === "month" ? "חודש הבא" : "שבוע הבא"}
               </CalendarNavButton>
             </div>
-        </div>
+          }
+        />
 
         {debugEnabled ? (
           <section className="rounded-[2rem] border border-amber-300 bg-amber-50 p-6 text-sm text-amber-950">
