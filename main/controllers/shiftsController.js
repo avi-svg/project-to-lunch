@@ -4293,7 +4293,6 @@ async function getStaffDashboardSummary(req, res, next) {
          WHERE s.end_time < NOW()
            AND s.start_time >= $1
            AND s.status != 'cancelled'
-           AND s.require_attendance_report = true
          GROUP BY s.id, s.title, s.start_time, s.end_time
          HAVING COUNT(sr.id) FILTER (WHERE att.id IS NULL) > 0
          ORDER BY s.start_time DESC
@@ -4328,8 +4327,7 @@ async function getStaffDashboardSummary(req, res, next) {
                WHEN s.start_time - INTERVAL '15 minutes' <= NOW() AND s.end_time >= NOW() THEN 'in_progress'
                WHEN s.end_time < NOW() THEN
                  CASE
-                   WHEN COALESCE(ats.pending_count, 0) = 0
-                     AND (s.require_attendance_report IS NOT TRUE OR ma.shift_id IS NULL)
+                   WHEN COALESCE(ats.pending_count, 0) = 0 AND ma.shift_id IS NULL
                    THEN 'ended_complete'
                    ELSE 'ended_incomplete'
                  END
