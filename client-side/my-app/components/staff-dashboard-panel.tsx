@@ -118,7 +118,7 @@ export function StaffDashboardPanel({ data }: Props) {
                           href={`/manage-shifts/${shift.id}`}
                           className="rounded-xl border border-stone-300 bg-white px-3 py-1 text-xs font-medium text-stone-900 transition hover:border-stone-900"
                         >
-                          לאישור
+                          לטיפול
                         </Link>
                       </div>
                     </li>
@@ -146,7 +146,7 @@ export function StaffDashboardPanel({ data }: Props) {
                           {shift.missingCount}/{shift.totalApproved} לא דיווחו
                         </span>
                         <Link
-                          href={`/manage-shifts/${shift.id}`}
+                          href="/shift-attendance"
                           className="rounded-xl border border-stone-300 bg-white px-3 py-1 text-xs font-medium text-stone-900 transition hover:border-stone-900"
                         >
                           לדיווח ידני
