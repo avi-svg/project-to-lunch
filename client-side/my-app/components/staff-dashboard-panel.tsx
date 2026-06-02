@@ -44,8 +44,11 @@ type Props = {
   data: StaffDashboardSummary | null;
 };
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 export function StaffDashboardPanel({ data }: Props) {
   const [expandedStatus, setExpandedStatus] = useState<ShiftComputedStatus | null>(null);
+  const [showAllStatuses, setShowAllStatuses] = useState<Set<ShiftComputedStatus>>(new Set());
 
   if (!data) {
     return (
@@ -177,60 +180,96 @@ export function StaffDashboardPanel({ data }: Props) {
             </div>
           </div>
           <ul className="divide-y divide-stone-100">
-            {statusOrder.map((status) => {
-              const count = shiftStatusCounts[status] ?? 0;
-              if (count === 0) return null;
-              const config = statusConfig[status];
-              const shifts = shiftsByStatus?.[status] ?? [];
-              const isExpanded = expandedStatus === status;
+            {(() => {
+              const now = Date.now();
+              const windowStart = new Date(now - 60 * MS_PER_DAY);
+              const windowEnd = new Date(now + 30 * MS_PER_DAY);
 
-              return (
-                <li key={status}>
-                  <button
-                    onClick={() => setExpandedStatus(isExpanded ? null : status)}
-                    className="flex w-full items-center justify-between gap-3 px-6 py-3 transition hover:bg-stone-50"
-                  >
-                    <span className="text-sm text-stone-700">{config.label}</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${config.color}`}>
-                        {count}
-                      </span>
-                      <span
-                        className="text-xs text-stone-400 transition-transform"
-                        style={{ display: "inline-block", transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)" }}
-                      >
-                        ▾
-                      </span>
-                    </div>
-                  </button>
+              return statusOrder.map((status) => {
+                const count = shiftStatusCounts[status] ?? 0;
+                if (count === 0) return null;
+                const config = statusConfig[status];
+                const allShifts = shiftsByStatus?.[status] ?? [];
+                const defaultShifts = allShifts.filter((s) => {
+                  const t = new Date(s.startTime);
+                  return t >= windowStart && t <= windowEnd;
+                });
+                const hiddenCount = allShifts.length - defaultShifts.length;
+                const isExpanded = expandedStatus === status;
+                const showAll = showAllStatuses.has(status);
+                const visibleShifts = showAll ? allShifts : defaultShifts;
 
-                  {isExpanded && shifts.length > 0 && (
-                    <div className="border-t border-stone-100 bg-stone-50 px-6 py-3">
-                      <ul className="space-y-2">
-                        {shifts.map((shift) => (
-                          <li key={shift.id} className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <span className="truncate text-sm font-medium text-stone-900">
-                                {shift.title}
-                              </span>
-                              <span className="mr-2 text-xs text-stone-500">
-                                {formatShortDate(shift.startTime)}
-                              </span>
-                            </div>
-                            <Link
-                              href={`/manage-shifts/${shift.id}`}
-                              className="shrink-0 rounded-xl border border-stone-300 bg-white px-3 py-1 text-xs font-medium text-stone-900 transition hover:border-stone-900"
-                            >
-                              לניהול ←
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
+                return (
+                  <li key={status}>
+                    <button
+                      onClick={() => {
+                        setExpandedStatus(isExpanded ? null : status);
+                        if (isExpanded) {
+                          setShowAllStatuses((prev) => {
+                            const next = new Set(prev);
+                            next.delete(status);
+                            return next;
+                          });
+                        }
+                      }}
+                      className="flex w-full items-center justify-between gap-3 px-6 py-3 transition hover:bg-stone-50"
+                    >
+                      <span className="text-sm text-stone-700">{config.label}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${config.color}`}>
+                          {count}
+                        </span>
+                        <span
+                          className="text-xs text-stone-400"
+                          style={{ display: "inline-block", transition: "transform 0.15s", transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)" }}
+                        >
+                          ▾
+                        </span>
+                      </div>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="border-t border-stone-100 bg-stone-50 px-6 py-3">
+                        {visibleShifts.length === 0 ? (
+                          <p className="text-xs text-stone-400">אין תורנויות בטווח המוצג.</p>
+                        ) : (
+                          <ul className="space-y-2">
+                            {visibleShifts.map((shift) => (
+                              <li key={shift.id} className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <span className="truncate text-sm font-medium text-stone-900">
+                                    {shift.title}
+                                  </span>
+                                  <span className="mr-2 text-xs text-stone-500">
+                                    {formatShortDate(shift.startTime)}
+                                  </span>
+                                </div>
+                                <Link
+                                  href={`/manage-shifts/${shift.id}`}
+                                  className="shrink-0 rounded-xl border border-stone-300 bg-white px-3 py-1 text-xs font-medium text-stone-900 transition hover:border-stone-900"
+                                >
+                                  לניהול ←
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {!showAll && hiddenCount > 0 && (
+                          <button
+                            onClick={() =>
+                              setShowAllStatuses((prev) => new Set([...prev, status]))
+                            }
+                            className="mt-3 text-xs font-medium text-stone-400 transition hover:text-stone-700"
+                          >
+                            הצג עוד ({hiddenCount} נוספות) ↓
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              });
+            })()}
           </ul>
         </div>
 
