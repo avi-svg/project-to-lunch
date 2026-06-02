@@ -7,6 +7,7 @@ import { BackendShiftsError, fetchWeekShiftsForUser } from "@/lib/server-shifts"
 import type { Shift } from "@/lib/shifts";
 import { getShiftColorTheme, getShiftCardStyle, getShiftDotStyle } from "@/lib/shift-colors";
 import type { ReactNode } from "react";
+import { StickyCalendarHeader } from "@/components/sticky-calendar-header";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -361,7 +362,8 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
           </div>
         </section>
 
-        <div className="sticky top-0 z-20 flex flex-col gap-4 rounded-[2rem] border border-stone-200 bg-white/95 p-6 shadow-sm backdrop-blur-sm">
+        <StickyCalendarHeader
+          viewButtons={
             <div className="relative z-10 flex flex-wrap gap-3">
               <CalendarNavButton
                 action="/manage-shifts/manage"
@@ -396,7 +398,20 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
                 יצירת אירוע חדש
               </Link>
             </div>
-
+          }
+          dateDisplay={
+            <div className="px-1 py-1">
+              <p className="text-xs text-stone-500">
+                {view === "month" ? "החודש המוצג" : "השבוע המוצג"}
+              </p>
+              <p className="mt-0.5 text-lg font-semibold text-stone-900">
+                {view === "month"
+                  ? formatMonthLabel(monthStart)
+                  : formatWeekRange(weekStart)}
+              </p>
+            </div>
+          }
+          navRow={
             <div className="relative z-10 grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
               <CalendarNavButton
                 action="/manage-shifts/manage"
@@ -444,7 +459,8 @@ export default async function ManageShiftsOverviewPage({ searchParams }: PagePro
                 {view === "month" ? "החודש הבא" : "השבוע הבא"}
               </CalendarNavButton>
             </div>
-        </div>
+          }
+        />
 
         {debugEnabled ? (
           <section className="rounded-[2rem] border border-amber-300 bg-amber-50 p-6 text-sm text-amber-950">
