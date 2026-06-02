@@ -472,9 +472,9 @@ export function ShiftAssignmentClient({
               גרור משתמשים אל תוך התורנות
             </h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
-              במאגר הראשי יופיעו קודם משתמשים שעדיין לא שובצו החודש ל
-              {formatShiftTypeLabel(shift.shiftType)}. אחרי שתשייך משתמש, תוכל לבחור עבורו
-              בנפרד אם השיבוץ יהיה מאולץ או לא מאולץ.
+              במאגר הראשי יופיעו משתמשים שלא היו נוכחים ב-30 יום האחרונים בתורנות
+              {shift.shiftType === "cleaning" ? " ארוחת ערב או ניקיון" : ` ${formatShiftTypeLabel(shift.shiftType)}`}.
+              אחרי שתשייך משתמש, תוכל לבחור עבורו בנפרד אם השיבוץ יהיה מאולץ או לא מאולץ.
             </p>
           </div>
         </section>
@@ -761,7 +761,7 @@ export function ShiftAssignmentClient({
                 מאגר משתמשים
               </p>
               <h2 className="mt-2 text-2xl font-semibold text-stone-900">
-                עדיין לא שובצו החודש
+                לא נוכחים ב-30 יום האחרונים
               </h2>
             </div>
             <span className="rounded-full bg-stone-100 px-4 py-2 text-sm text-stone-700">
@@ -821,7 +821,7 @@ export function ShiftAssignmentClient({
                 מאגר נוסף
               </p>
               <h2 className="mt-2 text-2xl font-semibold text-stone-900">
-                כבר שובצו החודש
+                נוכחים ב-30 יום האחרונים
               </h2>
               <p className="mt-2 text-sm text-stone-600">
                 מוצגים כאן רק כאופציה נוספת לשיוך.
@@ -838,7 +838,7 @@ export function ShiftAssignmentClient({
           >
             {availableAlreadyAssignedUsers.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-amber-300 bg-white px-4 py-6 text-sm text-stone-600">
-                אין כרגע משתמשים שכבר שובצו החודש וממתינים כאן כאופציה נוספת.
+                אין כרגע משתמשים שהיו נוכחים ב-30 יום האחרונים.
               </div>
             ) : (
               availableAlreadyAssignedUsers.map((user) => (

@@ -49,6 +49,14 @@ router.patch(
   shiftsController.rejectAttendance
 );
 router.patch(
+  '/:id/attendance/:attendanceId/override',
+  shiftsController.overrideAttendance
+);
+router.post(
+  '/:id/attendance/add-user',
+  shiftsController.addUserAttendance
+);
+router.patch(
   '/:id/registrations/:registrationId/confirm',
   shiftsController.confirmOwnRegistration
 );

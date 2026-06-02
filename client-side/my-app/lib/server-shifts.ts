@@ -255,6 +255,41 @@ export async function reportShiftAttendanceAbsentForUser(
   );
 }
 
+export async function overrideShiftAttendanceForUser(
+  userId: string,
+  shiftId: string,
+  attendanceId: string,
+  payload: { markAs: "present" | "absent" },
+) {
+  return backendShiftsFetch<{ message: string; attendance: ShiftAttendance }>(
+    userId,
+    `/shifts/${shiftId}/attendance/${attendanceId}/override`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function addUserAttendanceForUser(
+  userId: string,
+  shiftId: string,
+  payload: { userId: string },
+) {
+  return backendShiftsFetch<{
+    message: string;
+    registration: ShiftRegistration;
+    attendance: ShiftAttendance;
+  }>(
+    userId,
+    `/shifts/${shiftId}/attendance/add-user`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 export async function confirmShiftRegistrationForUser(
   userId: string,
   shiftId: string,

@@ -452,6 +452,37 @@ export async function reportShiftAttendanceAbsent(
   );
 }
 
+export async function overrideShiftAttendance(
+  shiftId: string,
+  attendanceId: string,
+  markAs: "present" | "absent",
+) {
+  return internalApiFetch<{ message: string; attendance: ShiftAttendance }>(
+    `/api/shifts/${shiftId}/attendance/${attendanceId}/override`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ markAs }),
+    },
+  );
+}
+
+export async function addUserShiftAttendance(
+  shiftId: string,
+  userId: string,
+) {
+  return internalApiFetch<{
+    message: string;
+    registration: ShiftRegistration;
+    attendance: ShiftAttendance;
+  }>(
+    `/api/shifts/${shiftId}/attendance/add-user`,
+    {
+      method: "POST",
+      body: JSON.stringify({ userId }),
+    },
+  );
+}
+
 async function updateShiftAttendance(
   shiftId: string,
   attendanceId: string,

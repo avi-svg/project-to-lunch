@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
+  addUserShiftAttendance,
   approveShiftAttendance,
+  getShiftAssignmentPools,
+  overrideShiftAttendance,
   rejectShiftAttendance,
   reportShiftAttendance,
   reportShiftAttendanceAbsent,
@@ -10,6 +13,8 @@ import {
   type Shift,
   type ShiftAttendance,
   type ShiftAttendanceStatus,
+  type ShiftAssignmentPoolUser,
+  type ShiftRegistration,
   type UserRole,
 } from "@/lib/shifts";
 
@@ -279,6 +284,14 @@ export function ShiftAttendanceClient({
   const [activeAbsentRegistrationId, setActiveAbsentRegistrationId] = useState<
     string | null
   >(null);
+  const [editShiftId, setEditShiftId] = useState<string | null>(null);
+  const [activeOverrideAttendanceId, setActiveOverrideAttendanceId] = useState<
+    string | null
+  >(null);
+  const [activeAddUserId, setActiveAddUserId] = useState<string | null>(null);
+  const [poolUsers, setPoolUsers] = useState<ShiftAssignmentPoolUser[] | null>(null);
+  const [loadingPoolUsersForShiftId, setLoadingPoolUsersForShiftId] = useState<string | null>(null);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const [isPending, startTransition] = useTransition();
 
@@ -436,6 +449,89 @@ export function ShiftAttendanceClient({
         );
       } finally {
         setActiveManualRegistrationId(null);
+      }
+    });
+  }
+
+  function applyRegistrationAdd(shiftId: string, registration: ShiftRegistration) {
+    setReviewShifts((current) =>
+      current.map((shift) =>
+        shift.id === shiftId
+          ? {
+              ...shift,
+              registrations: [
+                ...(shift.registrations ?? []).filter((r) => r.id !== registration.id),
+                registration,
+              ],
+            }
+          : shift,
+      ),
+    );
+  }
+
+  function handleOverrideAttendance(
+    shiftId: string,
+    attendanceId: string,
+    markAs: "present" | "absent",
+  ) {
+    setFeedback("");
+    setActiveOverrideAttendanceId(attendanceId);
+
+    startTransition(async () => {
+      try {
+        const result = await overrideShiftAttendance(shiftId, attendanceId, markAs);
+        applyAttendanceUpdate(result.attendance);
+        setFeedback(result.message);
+      } catch (error) {
+        setFeedback(
+          error instanceof Error ? error.message : "עדכון הנוכחות נכשל.",
+        );
+      } finally {
+        setActiveOverrideAttendanceId(null);
+      }
+    });
+  }
+
+  function handleEnterEditMode(shiftId: string) {
+    if (editShiftId === shiftId) {
+      setEditShiftId(null);
+      setPoolUsers(null);
+      setUserSearchQuery("");
+      return;
+    }
+
+    setEditShiftId(shiftId);
+    setPoolUsers(null);
+    setUserSearchQuery("");
+    setLoadingPoolUsersForShiftId(shiftId);
+
+    getShiftAssignmentPools(shiftId)
+      .then((data) => {
+        setPoolUsers([...data.defaultUsers, ...data.alreadyAssignedUsers]);
+      })
+      .catch(() => {
+        setPoolUsers([]);
+      })
+      .finally(() => {
+        setLoadingPoolUsersForShiftId(null);
+      });
+  }
+
+  function handleAddUserAttendance(shiftId: string, userId: string) {
+    setFeedback("");
+    setActiveAddUserId(userId);
+
+    startTransition(async () => {
+      try {
+        const result = await addUserShiftAttendance(shiftId, userId);
+        applyRegistrationAdd(shiftId, result.registration);
+        setFeedback(result.message);
+      } catch (error) {
+        setFeedback(
+          error instanceof Error ? error.message : "הוספת הנוכחות נכשלה.",
+        );
+      } finally {
+        setActiveAddUserId(null);
       }
     });
   }
@@ -653,9 +749,22 @@ export function ShiftAttendanceClient({
                           <p className="text-sm text-stone-500">{shift.location}</p>
                         ) : null}
                       </div>
-                      <span className="rounded-full bg-stone-100 px-4 py-2 text-sm text-stone-700">
-                        {approvedRegistrations.length} משובצים מאושרים
-                      </span>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="rounded-full bg-stone-100 px-4 py-2 text-sm text-stone-700">
+                          {approvedRegistrations.length} משובצים מאושרים
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleEnterEditMode(shift.id)}
+                          className={`rounded-2xl border px-4 py-2 text-sm font-semibold transition ${
+                            editShiftId === shift.id
+                              ? "border-stone-900 bg-stone-900 text-white"
+                              : "border-stone-300 bg-white text-stone-700 hover:border-stone-400"
+                          }`}
+                        >
+                          {editShiftId === shift.id ? "סיים עריכה" : "ערוך נוכחות"}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="mt-5 space-y-4">
@@ -788,12 +897,121 @@ export function ShiftAttendanceClient({
                                     </button>
                                   </>
                                 ) : null}
+
+                                {attendance && editShiftId === shift.id ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleOverrideAttendance(
+                                        shift.id,
+                                        attendance.id,
+                                        attendance.reportSource === "staff-absent"
+                                          ? "present"
+                                          : "absent",
+                                      )
+                                    }
+                                    disabled={
+                                      isPending &&
+                                      activeOverrideAttendanceId === attendance.id
+                                    }
+                                    className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                      attendance.reportSource === "staff-absent"
+                                        ? "border-emerald-200 bg-white text-emerald-700 hover:border-emerald-400"
+                                        : "border-stone-300 bg-white text-stone-700 hover:border-stone-400 hover:bg-stone-50"
+                                    }`}
+                                  >
+                                    {isPending &&
+                                    activeOverrideAttendanceId === attendance.id
+                                      ? "שומר..."
+                                      : attendance.reportSource === "staff-absent"
+                                        ? "שנה לנוכח"
+                                        : "שנה ללא נוכח"}
+                                  </button>
+                                ) : null}
                               </div>
                             </div>
                           </article>
                         );
                       })}
                     </div>
+
+                    {editShiftId === shift.id ? (
+                      <div className="mt-5 rounded-3xl border border-dashed border-stone-300 bg-stone-50 p-5">
+                        <p className="text-sm font-semibold text-stone-900">
+                          הוסף משתמש כנוכח
+                        </p>
+                        <p className="mt-1 text-sm text-stone-500">
+                          בחר משתמש מהרשימה כדי להוסיפו כנוכח בתורנות זו.
+                        </p>
+
+                        {loadingPoolUsersForShiftId === shift.id ? (
+                          <p className="mt-3 text-sm text-stone-500">טוען משתמשים...</p>
+                        ) : poolUsers === null ? null : (
+                          <div className="mt-3 space-y-3">
+                            <input
+                              type="text"
+                              placeholder="חפש לפי שם או אימייל..."
+                              value={userSearchQuery}
+                              onChange={(e) => setUserSearchQuery(e.target.value)}
+                              className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-900 placeholder:text-stone-400 focus:border-stone-400 focus:outline-none"
+                            />
+                            {(() => {
+                              const registeredUserIds = new Set(
+                                (shift.registrations ?? [])
+                                  .filter((r) => r.attendance !== null)
+                                  .map((r) => r.user.id),
+                              );
+                              const query = userSearchQuery.trim().toLowerCase();
+                              const filtered = poolUsers.filter(
+                                (u) =>
+                                  !registeredUserIds.has(u.id) &&
+                                  (query === "" ||
+                                    (u.name ?? "").toLowerCase().includes(query) ||
+                                    u.email.toLowerCase().includes(query)),
+                              );
+
+                              if (filtered.length === 0) {
+                                return (
+                                  <p className="text-sm text-stone-500">
+                                    {query ? "לא נמצאו תוצאות." : "אין משתמשים זמינים להוספה."}
+                                  </p>
+                                );
+                              }
+
+                              return (
+                                <ul className="max-h-64 overflow-y-auto rounded-2xl border border-stone-200 bg-white divide-y divide-stone-100">
+                                  {filtered.map((user) => (
+                                    <li key={user.id}>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleAddUserAttendance(shift.id, user.id)
+                                        }
+                                        disabled={
+                                          isPending && activeAddUserId === user.id
+                                        }
+                                        className="flex w-full items-center justify-between px-4 py-3 text-right transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        <span className="text-sm font-medium text-stone-900">
+                                          {user.name ?? user.email}
+                                        </span>
+                                        <span className="text-xs text-stone-500">
+                                          {isPending && activeAddUserId === user.id
+                                            ? "מוסיף..."
+                                            : user.name
+                                              ? user.email
+                                              : "הוסף כנוכח"}
+                                        </span>
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                   </section>
                 );
               })}

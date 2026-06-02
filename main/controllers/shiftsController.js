@@ -22,7 +22,7 @@ const registrationStatuses = new Set([
   'cancelled',
 ]);
 const attendanceStatuses = new Set(['pending', 'approved', 'rejected']);
-const attendanceReportSources = new Set(['self', 'staff-manual']);
+const attendanceReportSources = new Set(['self', 'staff-manual', 'staff-absent']);
 const swapRequestStatuses = new Set([
   'pending',
   'approved',
@@ -1765,8 +1765,7 @@ async function listShiftAssignmentPools(req, res, next) {
     }
 
     const resolvedShiftType = inferShiftType(shift);
-    const monthStart = startOfMonthUtc(shift.start_time);
-    const monthEnd = monthStart ? endOfMonthUtc(monthStart) : null;
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     const usersResult = await db.query(
       `SELECT
@@ -1778,30 +1777,29 @@ async function listShiftAssignmentPools(req, res, next) {
          u.birth_date AS "birthDate",
          u.is_active AS "isActive",
          CASE
-           WHEN $1::text IS NULL OR $2::timestamptz IS NULL OR $3::timestamptz IS NULL THEN FALSE
+           WHEN $2::timestamptz IS NULL THEN FALSE
            ELSE EXISTS (
              SELECT 1
-             FROM public.shift_registrations sr
+             FROM public.shift_attendance sa
              JOIN public.shifts s
-               ON s.id = sr.shift_id
-             WHERE sr.user_id = u.id
-               AND sr.status IN ('pending', 'approved')
+               ON s.id = sa.shift_id
+             WHERE sa.user_id = u.id
+               AND sa.status = 'approved'
+               AND sa.report_source != 'staff-absent'
                AND s.start_time >= $2
-               AND s.start_time < $3
                AND (
-                 ($1 = 'dinner' AND (s.category = $4 OR s.title = $5))
+                 (s.category = $3 OR s.title = $4)
                  OR
-                 ($1 = 'cleaning' AND (s.category = $6 OR s.title = $7))
+                 ($1 = 'cleaning' AND (s.category = $5 OR s.title = $6))
                )
            )
-         END AS has_month_assignment
+         END AS has_recent_attendance
        FROM public.users u
        WHERE u.role = 'user'
        ORDER BY COALESCE(NULLIF(TRIM(u.name), ''), u.email) ASC, u.email ASC`,
       [
         resolvedShiftType,
-        monthStart ? monthStart.toISOString() : null,
-        monthEnd ? monthEnd.toISOString() : null,
+        thirtyDaysAgo.toISOString(),
         shiftCategoriesByType.dinner,
         shiftTitlesByType.dinner,
         shiftCategoriesByType.cleaning,
@@ -1823,7 +1821,7 @@ async function listShiftAssignmentPools(req, res, next) {
         isActive: row.isActive,
       };
 
-      if (row.has_month_assignment) {
+      if (row.has_recent_attendance) {
         alreadyAssignedUsers.push(user);
       } else {
         defaultUsers.push(user);
@@ -1832,8 +1830,6 @@ async function listShiftAssignmentPools(req, res, next) {
 
     return res.json({
       shiftType: resolvedShiftType,
-      monthStart: monthStart ? monthStart.toISOString() : null,
-      monthEnd: monthEnd ? monthEnd.toISOString() : null,
       defaultUsers,
       alreadyAssignedUsers,
     });
@@ -3974,6 +3970,241 @@ async function rejectAttendance(req, res, next) {
   return updateAttendanceStatus(req, res, next, 'rejected');
 }
 
+async function overrideAttendance(req, res, next) {
+  const { id, attendanceId } = req.params;
+  const { markAs } = req.body || {};
+
+  if (!isValidUuid(id) || !isValidUuid(attendanceId)) {
+    return res.status(400).json({
+      message: 'Shift id and attendance id must be valid UUIDs.',
+    });
+  }
+
+  if (!isStaffLike(req.actor.role)) {
+    return res.status(403).json({
+      message: 'Only staff users can override attendance.',
+    });
+  }
+
+  if (markAs !== 'present' && markAs !== 'absent') {
+    return res.status(400).json({
+      message: "markAs must be either 'present' or 'absent'.",
+    });
+  }
+
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const shiftResult = await client.query(
+      `SELECT *
+       FROM public.shifts
+       WHERE id = $1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (shiftResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Shift not found.' });
+    }
+
+    const shift = shiftResult.rows[0];
+
+    if (Date.now() < getAttendanceWindowStartTime(shift.start_time).getTime()) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'Attendance can only be overridden from five minutes before the shift starts and later.',
+      });
+    }
+
+    const attendanceResult = await client.query(
+      `SELECT att.*
+       FROM public.shift_attendance att
+       WHERE att.id = $1
+         AND att.shift_id = $2
+       FOR UPDATE`,
+      [attendanceId, id]
+    );
+
+    if (attendanceResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Attendance record not found.' });
+    }
+
+    const newReportSource = markAs === 'present' ? 'staff-manual' : 'staff-absent';
+
+    await client.query(
+      `UPDATE public.shift_attendance
+       SET report_source = $2,
+           status = 'approved',
+           updated_at = timezone('utc', now()),
+           reported_at = timezone('utc', now()),
+           reported_by_user_id = $3,
+           reviewed_at = timezone('utc', now()),
+           reviewed_by_user_id = $3,
+           review_note = NULL
+       WHERE id = $1`,
+      [attendanceId, newReportSource, req.actor.id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json({
+      message: markAs === 'present' ? 'Attendance overridden to present.' : 'Attendance overridden to absent.',
+      attendance: await loadFormattedAttendanceById(attendanceId),
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    return next(error);
+  } finally {
+    client.release();
+  }
+}
+
+async function addUserAttendance(req, res, next) {
+  const { id } = req.params;
+  const { userId } = req.body || {};
+
+  if (!isValidUuid(id)) {
+    return res.status(400).json({ message: 'Shift id must be a valid UUID.' });
+  }
+
+  if (!isValidUuid(userId)) {
+    return res.status(400).json({ message: 'userId must be a valid UUID.' });
+  }
+
+  if (!isStaffLike(req.actor.role)) {
+    return res.status(403).json({
+      message: 'Only staff users can add attendance for other users.',
+    });
+  }
+
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const shiftResult = await client.query(
+      `SELECT *
+       FROM public.shifts
+       WHERE id = $1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (shiftResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Shift not found.' });
+    }
+
+    const shift = shiftResult.rows[0];
+
+    if (!canReportAttendanceManuallyForShift(shift, null)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'Attendance can only be added from five minutes before the shift starts and later.',
+      });
+    }
+
+    const userResult = await client.query(
+      `SELECT id, role FROM public.users WHERE id = $1 LIMIT 1`,
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const existingAttendanceResult = await client.query(
+      `SELECT sa.id
+       FROM public.shift_attendance sa
+       JOIN public.shift_registrations sr ON sr.id = sa.registration_id
+       WHERE sr.shift_id = $1
+         AND sr.user_id = $2
+       LIMIT 1`,
+      [id, userId]
+    );
+
+    if (existingAttendanceResult.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        message: 'Attendance has already been recorded for this user.',
+      });
+    }
+
+    let registrationId;
+
+    const approvedRegistrationResult = await client.query(
+      `SELECT id
+       FROM public.shift_registrations
+       WHERE shift_id = $1
+         AND user_id = $2
+         AND status = 'approved'
+       LIMIT 1
+       FOR UPDATE`,
+      [id, userId]
+    );
+
+    if (approvedRegistrationResult.rows.length > 0) {
+      registrationId = approvedRegistrationResult.rows[0].id;
+    } else {
+      registrationId = randomUUID();
+      await client.query(
+        `INSERT INTO public.shift_registrations (
+           id,
+           shift_id,
+           user_id,
+           status,
+           reviewed_at,
+           reviewed_by_user_id
+         )
+         VALUES ($1, $2, $3, 'approved', timezone('utc', now()), $4)`,
+        [registrationId, id, userId, req.actor.id]
+      );
+    }
+
+    const attendanceId = randomUUID();
+
+    await client.query(
+      `INSERT INTO public.shift_attendance (
+         id,
+         shift_id,
+         registration_id,
+         user_id,
+         status,
+         report_source,
+         reported_at,
+         reported_by_user_id,
+         reviewed_at,
+         reviewed_by_user_id
+       )
+       VALUES (
+         $1, $2, $3, $4,
+         'approved', 'staff-manual',
+         timezone('utc', now()), $5,
+         timezone('utc', now()), $5
+       )`,
+      [attendanceId, id, registrationId, userId, req.actor.id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({
+      message: 'User was added as present.',
+      registration: await loadFormattedRegistrationById(registrationId),
+      attendance: await loadFormattedAttendanceById(attendanceId),
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    return next(error);
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   approveAttendance,
   approveRegistration,
@@ -3992,6 +4223,8 @@ module.exports = {
   listSwapRequests,
   listWeekShifts,
   replaceShiftAssignments,
+  addUserAttendance,
+  overrideAttendance,
   reportAttendance,
   reportAttendanceAbsent,
   reportAttendanceManually,
