@@ -1778,20 +1778,38 @@ async function listShiftAssignmentPools(req, res, next) {
          u.is_active AS "isActive",
          CASE
            WHEN $2::timestamptz IS NULL THEN FALSE
-           ELSE EXISTS (
-             SELECT 1
-             FROM public.shift_attendance sa
-             JOIN public.shifts s
-               ON s.id = sa.shift_id
-             WHERE sa.user_id = u.id
-               AND sa.status = 'approved'
-               AND sa.report_source != 'staff-absent'
-               AND s.start_time >= $2
-               AND (
-                 (s.category = $3 OR s.title = $4)
-                 OR
-                 ($1 = 'cleaning' AND (s.category = $5 OR s.title = $6))
-               )
+           ELSE (
+             EXISTS (
+               SELECT 1
+               FROM public.shift_attendance sa
+               JOIN public.shifts s
+                 ON s.id = sa.shift_id
+               WHERE sa.user_id = u.id
+                 AND sa.status = 'approved'
+                 AND sa.report_source != 'staff-absent'
+                 AND s.start_time >= $2
+                 AND (
+                   (s.category = $3 OR s.title = $4)
+                   OR
+                   ($1 = 'cleaning' AND (s.category = $5 OR s.title = $6))
+                 )
+             )
+             OR
+             ($1 IS NOT NULL AND EXISTS (
+               SELECT 1
+               FROM public.shift_registrations sr
+               JOIN public.shifts s
+                 ON s.id = sr.shift_id
+               WHERE sr.user_id = u.id
+                 AND sr.status IN ('pending', 'approved')
+                 AND sr.created_at >= $2
+                 AND s.start_time > NOW()
+                 AND (
+                   ($1 = 'dinner' AND (s.category = $3 OR s.title = $4))
+                   OR
+                   ($1 = 'cleaning' AND (s.category = $5 OR s.title = $6))
+                 )
+             ))
            )
          END AS has_recent_attendance
        FROM public.users u
