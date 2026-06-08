@@ -1067,6 +1067,41 @@ async function upsertOAuthUser(req, res, next) {
   }
 }
 
+async function verifyOwnPassword(req, res, next) {
+  const { password } = req.body || {};
+
+  if (typeof password !== 'string' || password.length === 0) {
+    return res.status(400).json({ message: 'password is required.' });
+  }
+
+  try {
+    const userColumns = await getUsersColumns();
+
+    if (!userColumns.has('password')) {
+      return res.status(400).json({ message: 'Password authentication is not available.' });
+    }
+
+    const result = await db.query(
+      `SELECT password FROM public.users WHERE id = $1 LIMIT 1`,
+      [req.actor.id]
+    );
+
+    if (result.rows.length === 0 || typeof result.rows[0].password !== 'string') {
+      return res.status(401).json({ message: 'Invalid password.' });
+    }
+
+    const isValid = await verifyPassword(password, result.rows[0].password);
+
+    if (!isValid) {
+      return res.status(401).json({ message: 'Invalid password.' });
+    }
+
+    return res.json({ verified: true });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   authenticateCredentialsUser,
   createBirthdayGreeting,
@@ -1078,4 +1113,5 @@ module.exports = {
   listUsers,
   updateUser,
   updateUserRole,
+  verifyOwnPassword,
 };

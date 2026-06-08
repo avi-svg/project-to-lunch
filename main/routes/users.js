@@ -9,6 +9,7 @@ const {
 const router = express.Router();
 
 router.post('/login', usersController.authenticateCredentialsUser);
+router.post('/verify-password', requireActor, usersController.verifyOwnPassword);
 router.post('/oauth', usersController.upsertOAuthUser);
 router.post('/', requireActor, requireStaff, usersController.createUser);
 router.get('/', requireStaffOrInternalApiKey, usersController.listUsers);
