@@ -33,6 +33,7 @@ const navigationLinks: readonly NavigationLink[] = [
   { href: "/main-schedule", label: "לוח זמנים ראשי" },
   { href: "/birthdays", label: "ימי הולדת" },
   { href: "/shift-attendance", label: "נוכחות בתורנויות" },
+  { href: "/housing-attendance", label: "נוכחות בדיור", staffOnly: true },
   { href: "/staff-shifts", label: "אזור משמרות צוות", staffOnly: true },
   { href: "/staff-zone", label: "אזור צוות", staffOnly: true },
   { href: "/personal-area", label: "אזור אישי" },
@@ -64,6 +65,15 @@ const quickActions: readonly QuickAction[] = [
     description:
       "המשתמשים מדווחים על נוכחות החל מחמש דקות לפני תחילת התורנות ועד סיומה, והצוות מאשר את הרשימה לאחר מכן.",
     accent: "from-sky-800 via-cyan-700 to-teal-500",
+  },
+  {
+    href: "/housing-attendance",
+    eyebrow: "דיור",
+    title: "נוכחות בדיור",
+    description:
+      "דיווח יומי על נוכחות הדיירים בדיור: סימון נוכח/לא נוכח לכל דייר, עדכון פרטים ושיוך לדירה.",
+    accent: "from-violet-800 via-purple-700 to-fuchsia-600",
+    staffOnly: true,
   },
 ];
 

@@ -5,6 +5,7 @@ const db = require('./db');
 const appointmentsRoutes = require('./routes/appointments');
 const shiftsRoutes = require('./routes/shifts');
 const usersRoutes = require('./routes/users');
+const apartmentsRoutes = require('./routes/apartments');
 const usersController = require('./controllers/usersController');
 const { requireInternalApiKey } = require('./lib/user-roles');
 const { startBirthdayWhatsAppScheduler } = require('./lib/birthday-whatsapp');
@@ -57,6 +58,7 @@ app.get('/test-db', async (req, res, next) => {
 
 app.use('/appointments', appointmentsRoutes);
 app.use('/shifts', shiftsRoutes);
+app.use('/apartments', apartmentsRoutes);
 app.get('/internal/users', requireInternalApiKey, usersController.listUsers);
 app.use('/users', usersRoutes);
 app.use('/user', usersRoutes);
