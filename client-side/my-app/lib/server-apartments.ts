@@ -95,7 +95,7 @@ export async function fetchAllApartments(): Promise<BackendApartment[]> {
     );
   }
 
-  return data.apartments
-    .map((a: unknown) => normalizeApartment(a))
+  return (data.apartments as unknown[])
+    .map((a) => normalizeApartment(a))
     .filter((a): a is BackendApartment => a !== null);
 }
