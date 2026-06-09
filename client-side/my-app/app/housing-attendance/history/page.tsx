@@ -6,6 +6,10 @@ import {
   fetchAllBackendUsers,
   type BackendDirectoryUser,
 } from "@/lib/server-users";
+import {
+  checkMyPermission,
+  PERM_VIEW_HOUSING_HISTORY,
+} from "@/lib/server-permissions";
 import { HousingAttendanceHistoryClient } from "@/components/housing-attendance-history-client";
 
 export default async function HousingAttendanceHistoryPage() {
@@ -16,6 +20,15 @@ export default async function HousingAttendanceHistoryPage() {
   }
 
   if (session.user.role !== "staff") {
+    redirect("/dashboard");
+  }
+
+  try {
+    const permCheck = await checkMyPermission(session.user.id, PERM_VIEW_HOUSING_HISTORY);
+    if (permCheck.isBootstrapped && !permCheck.hasPermission) {
+      redirect("/dashboard");
+    }
+  } catch {
     redirect("/dashboard");
   }
 

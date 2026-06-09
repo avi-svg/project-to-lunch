@@ -31,6 +31,12 @@ export default async function StaffZonePage() {
           >
             מעבר לאזור האישי
           </Link>
+          <Link
+            href="/manage-permissions"
+            className="inline-flex rounded-2xl border border-stone-300 bg-white px-5 py-3 text-sm font-medium text-stone-900 transition hover:border-stone-900"
+          >
+            ניהול הרשאות
+          </Link>
         </div>
 
         <StaffZoneClient

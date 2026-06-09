@@ -30,6 +30,12 @@ import {
   type UserRole,
 } from "@/lib/shifts";
 
+type PasswordForm = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
+
 type Props = {
   currentUser: {
     id: string;
@@ -231,6 +237,14 @@ export function PersonalAreaClient({
   const [profileMessage, setProfileMessage] = useState("");
   const [profileError, setProfileError] = useState(initialProfileError);
   const [isProfilePending, startProfileTransition] = useTransition();
+  const [passwordForm, setPasswordForm] = useState<PasswordForm>({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [isPasswordPending, startPasswordTransition] = useTransition();
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -438,6 +452,49 @@ export function PersonalAreaClient({
     });
   }
 
+  function handlePasswordSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPasswordMessage("");
+    setPasswordError("");
+
+    if (passwordForm.newPassword.length < 8) {
+      setPasswordError("הסיסמה החדשה חייבת להכיל לפחות 8 תווים.");
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError("הסיסמה החדשה ואישורה אינם תואמים.");
+      return;
+    }
+
+    startPasswordTransition(async () => {
+      try {
+        await parseResponse(
+          await fetch("/api/housing-attendance/verify-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: passwordForm.currentPassword }),
+          }),
+        );
+
+        await parseResponse(
+          await fetch(`/api/users/${currentUser.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: passwordForm.newPassword }),
+          }),
+        );
+
+        setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+        setPasswordMessage("הסיסמה עודכנה בהצלחה.");
+      } catch (error) {
+        setPasswordError(
+          error instanceof Error ? error.message : "לא ניתן לעדכן את הסיסמה.",
+        );
+      }
+    });
+  }
+
   if (!isHydrated) {
     return (
       <div className="space-y-8">
@@ -541,6 +598,98 @@ export function PersonalAreaClient({
           ) : null}
         </form>
       </section>
+
+      {isStaffView ? (
+        <section className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm">
+          <div>
+            <p className="text-sm font-semibold tracking-[0.2em] text-stone-500">
+              אבטחה
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold text-stone-900">
+              שינוי סיסמה
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-600">
+              לשינוי הסיסמה יש להזין את הסיסמה הנוכחית ואת הסיסמה החדשה.
+            </p>
+          </div>
+
+          <form onSubmit={handlePasswordSave} className="mt-6 space-y-4">
+            <div className="grid gap-4 md:grid-cols-[minmax(0,22rem)]">
+              <label className="space-y-2">
+                <span className="block text-sm font-medium text-stone-700">
+                  סיסמה נוכחית
+                </span>
+                <input
+                  type="password"
+                  value={passwordForm.currentPassword}
+                  onChange={(e) =>
+                    setPasswordForm((f) => ({ ...f, currentPassword: e.target.value }))
+                  }
+                  autoComplete="current-password"
+                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="block text-sm font-medium text-stone-700">
+                  סיסמה חדשה
+                </span>
+                <input
+                  type="password"
+                  value={passwordForm.newPassword}
+                  onChange={(e) =>
+                    setPasswordForm((f) => ({ ...f, newPassword: e.target.value }))
+                  }
+                  autoComplete="new-password"
+                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="block text-sm font-medium text-stone-700">
+                  אישור סיסמה חדשה
+                </span>
+                <input
+                  type="password"
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) =>
+                    setPasswordForm((f) => ({ ...f, confirmPassword: e.target.value }))
+                  }
+                  autoComplete="new-password"
+                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none transition focus:border-stone-900"
+                />
+              </label>
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                disabled={
+                  isPasswordPending ||
+                  !passwordForm.currentPassword ||
+                  !passwordForm.newPassword ||
+                  !passwordForm.confirmPassword
+                }
+                className="rounded-2xl bg-stone-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-400"
+              >
+                {isPasswordPending ? "מעדכן..." : "עדכן סיסמה"}
+              </button>
+            </div>
+
+            {passwordError ? (
+              <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                {passwordError}
+              </p>
+            ) : null}
+
+            {passwordMessage ? (
+              <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {passwordMessage}
+              </p>
+            ) : null}
+          </form>
+        </section>
+      ) : null}
 
       {isStaffView ? (
         <section className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm">
