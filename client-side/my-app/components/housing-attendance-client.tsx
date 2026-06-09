@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import type { BackendDirectoryUser } from "@/lib/server-users";
-import type { BackendApartment } from "@/lib/server-apartments";
+import type { BackendApartment, ApartmentGender } from "@/lib/server-apartments";
 
 const STORAGE_KEY_PREFIX = "housing-attendance";
 
@@ -10,7 +11,6 @@ type PersistedResidentState = {
   attendance: "present" | "absent" | null;
   allOk: boolean | null;
   notes: string;
-  apartment: string;
 };
 
 type ResidentUiState = PersistedResidentState & {
@@ -25,7 +25,6 @@ function makeDefault(): ResidentUiState {
     attendance: null,
     allOk: null,
     notes: "",
-    apartment: "",
     isEditExpanded: false,
     showAllOkPrompt: false,
     showAbsentForm: false,
@@ -42,9 +41,7 @@ function loadFromStorage(
   residents: BackendDirectoryUser[],
 ): Record<string, ResidentUiState> {
   const result: Record<string, ResidentUiState> = {};
-  for (const r of residents) {
-    result[r.id] = makeDefault();
-  }
+  for (const r of residents) result[r.id] = makeDefault();
   try {
     const raw = localStorage.getItem(`${STORAGE_KEY_PREFIX}-${date}`);
     if (!raw) return result;
@@ -57,7 +54,6 @@ function loadFromStorage(
           attendance: saved.attendance ?? null,
           allOk: saved.allOk ?? null,
           notes: saved.notes ?? "",
-          apartment: saved.apartment ?? "",
           draftNotes: saved.notes ?? "",
         };
       }
@@ -72,20 +68,18 @@ function saveToStorage(date: string, states: Record<string, ResidentUiState>) {
   try {
     const persisted: Record<string, PersistedResidentState> = {};
     for (const [id, s] of Object.entries(states)) {
-      persisted[id] = {
-        attendance: s.attendance,
-        allOk: s.allOk,
-        notes: s.notes,
-        apartment: s.apartment,
-      };
+      persisted[id] = { attendance: s.attendance, allOk: s.allOk, notes: s.notes };
     }
-    localStorage.setItem(
-      `${STORAGE_KEY_PREFIX}-${date}`,
-      JSON.stringify(persisted),
-    );
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}-${date}`, JSON.stringify(persisted));
   } catch {
-    // ignore storage errors
+    // ignore
   }
+}
+
+function genderLabel(gender: ApartmentGender | null) {
+  if (gender === "male") return "בנים";
+  if (gender === "female") return "בנות";
+  return null;
 }
 
 type Props = {
@@ -94,7 +88,50 @@ type Props = {
   fetchError: string | null;
 };
 
+type ApartmentGroup = {
+  apartment: BackendApartment | null;
+  residents: BackendDirectoryUser[];
+};
+
+function groupByApartment(
+  residents: BackendDirectoryUser[],
+  apartments: BackendApartment[],
+): ApartmentGroup[] {
+  const aptMap = new Map(apartments.map((a) => [a.id, a]));
+  const groups = new Map<string | null, BackendDirectoryUser[]>();
+
+  for (const r of residents) {
+    const key = r.apartmentId ?? null;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(r);
+  }
+
+  const result: ApartmentGroup[] = [];
+
+  // Apartments in position order
+  for (const apt of apartments) {
+    const members = groups.get(apt.id);
+    if (members && members.length > 0) {
+      result.push({ apartment: apt, residents: members });
+      groups.delete(apt.id);
+    }
+  }
+
+  // Unassigned residents last
+  const unassigned = groups.get(null) ?? [];
+  // Also pick up any apartment IDs that don't match known apartments
+  for (const [key, members] of groups) {
+    if (key !== null) unassigned.push(...members);
+  }
+  if (unassigned.length > 0) {
+    result.push({ apartment: null, residents: unassigned });
+  }
+
+  return result;
+}
+
 export function HousingAttendanceClient({ residents, apartments, fetchError }: Props) {
+  const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(todayDate);
   const [states, setStates] = useState<Record<string, ResidentUiState>>(() => {
     const initial: Record<string, ResidentUiState> = {};
@@ -102,6 +139,7 @@ export function HousingAttendanceClient({ residents, apartments, fetchError }: P
     return initial;
   });
   const [isHydrated, setIsHydrated] = useState(false);
+  const [savingApartment, setSavingApartment] = useState<string | null>(null);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -143,17 +181,13 @@ export function HousingAttendanceClient({ residents, apartments, fetchError }: P
 
   function handleAbsent(userId: string) {
     const current = states[userId] ?? makeDefault();
-    update(
-      userId,
-      {
-        attendance: "absent",
-        allOk: null,
-        showAllOkPrompt: false,
-        showAbsentForm: true,
-        draftNotes: current.notes,
-      },
-      true,
-    );
+    update(userId, {
+      attendance: "absent",
+      allOk: null,
+      showAllOkPrompt: false,
+      showAbsentForm: true,
+      draftNotes: current.notes,
+    });
   }
 
   function handleSaveNotes(userId: string) {
@@ -161,24 +195,32 @@ export function HousingAttendanceClient({ residents, apartments, fetchError }: P
     update(userId, { notes: current.draftNotes, showAbsentForm: false });
   }
 
-  const totalPresent = Object.values(states).filter(
-    (s) => s.attendance === "present",
-  ).length;
-  const totalAbsent = Object.values(states).filter(
-    (s) => s.attendance === "absent",
-  ).length;
+  async function handleApartmentChange(userId: string, apartmentId: string | null) {
+    setSavingApartment(userId);
+    try {
+      await fetch(`/api/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apartmentId }),
+      });
+      router.refresh();
+    } finally {
+      setSavingApartment(null);
+    }
+  }
+
+  const groups = groupByApartment(residents, apartments);
+
+  const totalPresent = Object.values(states).filter((s) => s.attendance === "present").length;
+  const totalAbsent = Object.values(states).filter((s) => s.attendance === "absent").length;
   const totalUnmarked = residents.length - totalPresent - totalAbsent;
 
   if (!isHydrated) {
     return (
       <section className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
         <div className="bg-[linear-gradient(135deg,#1c1917,#57534e)] px-8 py-10 text-white">
-          <p className="text-sm font-semibold tracking-[0.25em] text-stone-300">
-            דיווח נוכחות
-          </p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-            נוכחות בדיור
-          </h1>
+          <p className="text-sm font-semibold tracking-[0.25em] text-stone-300">דיווח נוכחות</p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight">נוכחות בדיור</h1>
           <p className="mt-4 text-sm leading-7 text-stone-300">טוען נתונים…</p>
         </div>
       </section>
@@ -189,12 +231,8 @@ export function HousingAttendanceClient({ residents, apartments, fetchError }: P
     <div className="space-y-6">
       <section className="overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm">
         <div className="bg-[linear-gradient(135deg,#1c1917,#57534e)] px-8 py-10 text-white">
-          <p className="text-sm font-semibold tracking-[0.25em] text-stone-300">
-            דיווח נוכחות
-          </p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-            נוכחות בדיור
-          </h1>
+          <p className="text-sm font-semibold tracking-[0.25em] text-stone-300">דיווח נוכחות</p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight">נוכחות בדיור</h1>
           <p className="mt-4 text-sm leading-7 text-stone-300">
             מלא את נוכחות הדיירים לפי תאריך. הנתונים נשמרים מקומית.
           </p>
@@ -203,9 +241,7 @@ export function HousingAttendanceClient({ residents, apartments, fetchError }: P
 
       <section className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm">
         <label className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-          <span className="text-sm font-semibold text-stone-700 whitespace-nowrap">
-            תאריך הדיווח
-          </span>
+          <span className="text-sm font-semibold text-stone-700 whitespace-nowrap">תאריך הדיווח</span>
           <input
             type="date"
             value={selectedDate}
@@ -216,192 +252,190 @@ export function HousingAttendanceClient({ residents, apartments, fetchError }: P
 
         {residents.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-3 text-sm">
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">
-              נוכחים: {totalPresent}
-            </span>
-            <span className="rounded-full bg-red-100 px-3 py-1 text-red-800">
-              לא נוכחים: {totalAbsent}
-            </span>
-            <span className="rounded-full bg-stone-100 px-3 py-1 text-stone-600">
-              לא דווח: {totalUnmarked}
-            </span>
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">נוכחים: {totalPresent}</span>
+            <span className="rounded-full bg-red-100 px-3 py-1 text-red-800">לא נוכחים: {totalAbsent}</span>
+            <span className="rounded-full bg-stone-100 px-3 py-1 text-stone-600">לא דווח: {totalUnmarked}</span>
           </div>
         )}
       </section>
 
       {fetchError ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-          {fetchError}
-        </div>
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">{fetchError}</div>
       ) : residents.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-5 py-8 text-center text-sm text-stone-500">
           אין דיירים במערכת כרגע.
         </div>
       ) : (
-        <div className="space-y-4">
-          {residents.map((resident) => {
-            const s = states[resident.id] ?? makeDefault();
-            const displayName = resident.name ?? resident.email;
+        <div className="space-y-8">
+          {groups.map((group, gi) => (
+            <div key={group.apartment?.id ?? `unassigned-${gi}`}>
+              {/* Apartment section header */}
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-semibold text-stone-700">
+                  {group.apartment ? group.apartment.name : "ללא שיוך דירה"}
+                </h2>
+                {group.apartment?.gender && (
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    group.apartment.gender === "male"
+                      ? "bg-sky-100 text-sky-800"
+                      : "bg-pink-100 text-pink-800"
+                  }`}>
+                    {genderLabel(group.apartment.gender)}
+                  </span>
+                )}
+                {group.apartment?.address && (
+                  <span className="text-xs text-stone-400">{group.apartment.address}</span>
+                )}
+                <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-500">
+                  {group.residents.length} דיירים
+                </span>
+              </div>
 
-            return (
-              <article
-                key={resident.id}
-                className="rounded-[2rem] border border-stone-200 bg-white shadow-sm"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3 px-6 pt-6 pb-4">
-                  <div>
-                    <p className="text-base font-semibold text-stone-900">
-                      {displayName}
-                    </p>
-                    {resident.name && (
-                      <p className="mt-0.5 text-sm text-stone-500">
-                        {resident.email}
-                      </p>
-                    )}
-                    {s.apartment && (
-                      <p className="mt-1 text-xs text-stone-400">{s.apartment}</p>
-                    )}
-                  </div>
+              <div className="space-y-4">
+                {group.residents.map((resident) => {
+                  const s = states[resident.id] ?? makeDefault();
+                  const displayName = resident.name ?? resident.email;
 
-                  <AttendanceBadge state={s} />
-                </div>
-
-                <div className="border-t border-stone-100 px-6 py-4">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      update(
-                        resident.id,
-                        { isEditExpanded: !s.isEditExpanded },
-                        false,
-                      )
-                    }
-                    className="flex items-center gap-2 text-sm font-medium text-stone-600 transition hover:text-stone-900"
-                  >
-                    <span
-                      className={`transition-transform ${s.isEditExpanded ? "rotate-180" : ""}`}
+                  return (
+                    <article
+                      key={resident.id}
+                      className="rounded-[2rem] border border-stone-200 bg-white shadow-sm"
                     >
-                      ▾
-                    </span>
-                    עריכת פרטי הדייר
-                  </button>
-
-                  {s.isEditExpanded && (
-                    <div className="mt-4 space-y-3 rounded-2xl border border-stone-100 bg-stone-50 p-4">
-                      <label className="flex flex-col gap-1.5">
-                        <span className="text-sm font-medium text-stone-700">
-                          דירה
-                        </span>
-                        <select
-                          value={s.apartment}
-                          onChange={(e) =>
-                            update(resident.id, { apartment: e.target.value })
-                          }
-                          className="rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-stone-900"
-                        >
-                          <option value="">בחר דירה…</option>
-                          {apartments.map((apt) => (
-                            <option key={apt.id} value={apt.name}>
-                              {apt.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  )}
-                </div>
-
-                <div className="border-t border-stone-100 px-6 py-4 space-y-4">
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handlePresent(resident.id)}
-                      className={`rounded-2xl border px-5 py-2.5 text-sm font-medium transition ${
-                        s.attendance === "present"
-                          ? "border-emerald-600 bg-emerald-600 text-white"
-                          : "border-stone-300 bg-white text-stone-900 hover:border-emerald-600 hover:text-emerald-700"
-                      }`}
-                    >
-                      נוכח בדיור
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAbsent(resident.id)}
-                      className={`rounded-2xl border px-5 py-2.5 text-sm font-medium transition ${
-                        s.attendance === "absent"
-                          ? "border-red-600 bg-red-600 text-white"
-                          : "border-stone-300 bg-white text-stone-900 hover:border-red-500 hover:text-red-600"
-                      }`}
-                    >
-                      לא נוכח בדיור
-                    </button>
-                  </div>
-
-                  {s.showAllOkPrompt && (
-                    <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
-                      <p className="mb-3 text-sm font-semibold text-stone-800">
-                        הכל בסדר?
-                      </p>
-                      <div className="flex gap-3">
-                        <button
-                          type="button"
-                          onClick={() => handleAllOk(resident.id, true)}
-                          className="rounded-2xl border border-emerald-400 bg-emerald-50 px-5 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100"
-                        >
-                          כן, הכל בסדר
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAllOk(resident.id, false)}
-                          className="rounded-2xl border border-amber-400 bg-amber-50 px-5 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100"
-                        >
-                          לא, יש בעיה
-                        </button>
+                      <div className="flex flex-wrap items-start justify-between gap-3 px-6 pt-6 pb-4">
+                        <div>
+                          <p className="text-base font-semibold text-stone-900">{displayName}</p>
+                          {resident.name && (
+                            <p className="mt-0.5 text-sm text-stone-500">{resident.email}</p>
+                          )}
+                        </div>
+                        <AttendanceBadge state={s} />
                       </div>
-                    </div>
-                  )}
 
-                  {s.showAbsentForm && (
-                    <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 space-y-3">
-                      <label className="block space-y-1.5">
-                        <span className="text-sm font-medium text-stone-700">
-                          פרטים נוספים
-                        </span>
-                        <textarea
-                          value={s.draftNotes}
-                          onChange={(e) =>
-                            update(
-                              resident.id,
-                              { draftNotes: e.target.value },
-                              false,
-                            )
-                          }
-                          rows={3}
-                          placeholder="למשל: יצא לחופשה, אשפוז, לינה חוץ…"
-                          className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-stone-900 resize-none"
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveNotes(resident.id)}
-                        className="rounded-2xl bg-stone-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-stone-700"
-                      >
-                        שמור
-                      </button>
-                    </div>
-                  )}
+                      {/* Edit details */}
+                      <div className="border-t border-stone-100 px-6 py-4">
+                        <button
+                          type="button"
+                          onClick={() => update(resident.id, { isEditExpanded: !s.isEditExpanded }, false)}
+                          className="flex items-center gap-2 text-sm font-medium text-stone-600 transition hover:text-stone-900"
+                        >
+                          <span className={`transition-transform ${s.isEditExpanded ? "rotate-180" : ""}`}>▾</span>
+                          עריכת פרטי הדייר
+                        </button>
 
-                  {s.attendance === "absent" &&
-                    !s.showAbsentForm &&
-                    s.notes && (
-                      <p className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-                        {s.notes}
-                      </p>
-                    )}
-                </div>
-              </article>
-            );
-          })}
+                        {s.isEditExpanded && (
+                          <div className="mt-4 space-y-3 rounded-2xl border border-stone-100 bg-stone-50 p-4">
+                            <label className="flex flex-col gap-1.5">
+                              <span className="text-sm font-medium text-stone-700">דירה</span>
+                              <select
+                                value={resident.apartmentId ?? ""}
+                                disabled={savingApartment === resident.id}
+                                onChange={(e) =>
+                                  handleApartmentChange(
+                                    resident.id,
+                                    e.target.value || null,
+                                  )
+                                }
+                                className="rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-stone-900 disabled:opacity-60"
+                              >
+                                <option value="">ללא שיוך דירה</option>
+                                {apartments.map((apt) => (
+                                  <option key={apt.id} value={apt.id}>
+                                    {apt.name}
+                                    {apt.gender ? ` (${genderLabel(apt.gender)})` : ""}
+                                  </option>
+                                ))}
+                              </select>
+                              {savingApartment === resident.id && (
+                                <p className="text-xs text-stone-400">שומר…</p>
+                              )}
+                            </label>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Attendance buttons */}
+                      <div className="border-t border-stone-100 px-6 py-4 space-y-4">
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handlePresent(resident.id)}
+                            className={`rounded-2xl border px-5 py-2.5 text-sm font-medium transition ${
+                              s.attendance === "present"
+                                ? "border-emerald-600 bg-emerald-600 text-white"
+                                : "border-stone-300 bg-white text-stone-900 hover:border-emerald-600 hover:text-emerald-700"
+                            }`}
+                          >
+                            נוכח בדיור
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAbsent(resident.id)}
+                            className={`rounded-2xl border px-5 py-2.5 text-sm font-medium transition ${
+                              s.attendance === "absent"
+                                ? "border-red-600 bg-red-600 text-white"
+                                : "border-stone-300 bg-white text-stone-900 hover:border-red-500 hover:text-red-600"
+                            }`}
+                          >
+                            לא נוכח בדיור
+                          </button>
+                        </div>
+
+                        {s.showAllOkPrompt && (
+                          <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
+                            <p className="mb-3 text-sm font-semibold text-stone-800">הכל בסדר?</p>
+                            <div className="flex gap-3">
+                              <button
+                                type="button"
+                                onClick={() => handleAllOk(resident.id, true)}
+                                className="rounded-2xl border border-emerald-400 bg-emerald-50 px-5 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100"
+                              >
+                                כן, הכל בסדר
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleAllOk(resident.id, false)}
+                                className="rounded-2xl border border-amber-400 bg-amber-50 px-5 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100"
+                              >
+                                לא, יש בעיה
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {s.showAbsentForm && (
+                          <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 space-y-3">
+                            <label className="block space-y-1.5">
+                              <span className="text-sm font-medium text-stone-700">פרטים נוספים</span>
+                              <textarea
+                                value={s.draftNotes}
+                                onChange={(e) => update(resident.id, { draftNotes: e.target.value }, false)}
+                                rows={3}
+                                placeholder="למשל: יצא לחופשה, אשפוז, לינה חוץ…"
+                                className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-stone-900 resize-none"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveNotes(resident.id)}
+                              className="rounded-2xl bg-stone-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-stone-700"
+                            >
+                              שמור
+                            </button>
+                          </div>
+                        )}
+
+                        {s.attendance === "absent" && !s.showAbsentForm && s.notes && (
+                          <p className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                            {s.notes}
+                          </p>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -409,37 +443,13 @@ export function HousingAttendanceClient({ residents, apartments, fetchError }: P
 }
 
 function AttendanceBadge({ state }: { state: ResidentUiState }) {
-  if (state.attendance === "present" && state.allOk === true) {
-    return (
-      <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
-        נוכח · הכל בסדר
-      </span>
-    );
-  }
-  if (state.attendance === "present" && state.allOk === false) {
-    return (
-      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-        נוכח · יש בעיה
-      </span>
-    );
-  }
-  if (state.attendance === "present" && state.allOk === null) {
-    return (
-      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
-        נוכח
-      </span>
-    );
-  }
-  if (state.attendance === "absent") {
-    return (
-      <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
-        לא נוכח
-      </span>
-    );
-  }
-  return (
-    <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-medium text-stone-500">
-      לא דווח
-    </span>
-  );
+  if (state.attendance === "present" && state.allOk === true)
+    return <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">נוכח · הכל בסדר</span>;
+  if (state.attendance === "present" && state.allOk === false)
+    return <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">נוכח · יש בעיה</span>;
+  if (state.attendance === "present")
+    return <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">נוכח</span>;
+  if (state.attendance === "absent")
+    return <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">לא נוכח</span>;
+  return <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-medium text-stone-500">לא דווח</span>;
 }

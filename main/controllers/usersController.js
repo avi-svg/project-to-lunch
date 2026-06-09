@@ -165,6 +165,10 @@ function formatUser(row) {
     formatted.birthDate = formatBirthDateValue(row.birth_date);
   }
 
+  if ('apartment_id' in row) {
+    formatted.apartmentId = typeof row.apartment_id === 'string' ? row.apartment_id : null;
+  }
+
   return formatted;
 }
 
@@ -322,6 +326,10 @@ async function listUsers(req, res, next) {
 
     if (userColumns.has('is_active')) {
       selectFields.push('is_active');
+    }
+
+    if (userColumns.has('apartment_id')) {
+      selectFields.push('apartment_id');
     }
 
     const result = await db.query(
@@ -488,7 +496,7 @@ async function getUserById(req, res, next) {
 
 async function updateUser(req, res, next) {
   const { userId } = req.params;
-  const { name, email, role, password, isActive, phone, birthDate } = req.body || {};
+  const { name, email, role, password, isActive, phone, birthDate, apartmentId } = req.body || {};
   const isStaffActor = isStaffLike(req.actor?.role);
   const normalizedPhone = normalizePhoneValue(phone);
   const normalizedBirthDate = normalizeBirthDateValue(birthDate);
@@ -512,7 +520,8 @@ async function updateUser(req, res, next) {
     password === undefined &&
     isActive === undefined &&
     phone === undefined &&
-    birthDate === undefined
+    birthDate === undefined &&
+    apartmentId === undefined
   ) {
     return res.status(400).json({
       message: 'At least one editable field is required.',
@@ -635,6 +644,34 @@ async function updateUser(req, res, next) {
       updates.push(`is_active = $${values.length}`);
     }
 
+    if (apartmentId !== undefined) {
+      if (!isStaffActor) {
+        return res.status(403).json({
+          message: 'Only staff users can update apartment assignment.',
+        });
+      }
+
+      if (apartmentId !== null && !isValidUuid(apartmentId)) {
+        return res.status(400).json({
+          message: 'apartmentId must be a valid UUID or null.',
+        });
+      }
+
+      if (apartmentId !== null) {
+        const aptResult = await db.query(
+          'SELECT id FROM public.apartments WHERE id = $1',
+          [apartmentId]
+        );
+
+        if (aptResult.rows.length === 0) {
+          return res.status(400).json({ message: 'Apartment not found.' });
+        }
+      }
+
+      values.push(apartmentId);
+      updates.push(`apartment_id = $${values.length}`);
+    }
+
     if (updates.length === 0) {
       return res.status(400).json({
         message: 'No valid user fields were provided for update.',
@@ -658,6 +695,10 @@ async function updateUser(req, res, next) {
 
     if (userColumns.has('is_active')) {
       returningFields.push('is_active');
+    }
+
+    if (userColumns.has('apartment_id')) {
+      returningFields.push('apartment_id');
     }
 
     const result = await db.query(

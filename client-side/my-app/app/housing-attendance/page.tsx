@@ -35,12 +35,12 @@ export default async function HousingAttendanceLandingPage() {
               נוכחות בדיור
             </h1>
             <p className="mt-4 text-sm leading-7 text-stone-300">
-              דיווח יומי על נוכחות הדיירים וצפייה בדיווחים קודמים.
+              דיווח יומי על נוכחות הדיירים, צפייה בדיווחים קודמים וניהול הדירות.
             </p>
           </div>
         </section>
 
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <Link
             href="/housing-attendance/report"
             className="group overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-stone-400 hover:shadow-lg"
@@ -83,6 +83,28 @@ export default async function HousingAttendanceLandingPage() {
               </p>
               <span className="inline-flex rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-900 transition group-hover:border-stone-900">
                 צפייה בהיסטוריה
+              </span>
+            </div>
+          </Link>
+
+          <Link
+            href="/housing-attendance/apartments"
+            className="group overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-stone-400 hover:shadow-lg"
+          >
+            <div className="bg-gradient-to-br from-emerald-800 via-teal-700 to-cyan-600 px-6 py-8 text-white">
+              <p className="text-sm font-semibold tracking-[0.2em] text-white/80">
+                ניהול
+              </p>
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight">
+                ניהול דירות
+              </h2>
+            </div>
+            <div className="space-y-5 px-6 py-6">
+              <p className="text-sm leading-7 text-stone-600">
+                הוספה ועריכה של דירות, שיוך דיירים לדירות וצפייה בפרטי כל דירה.
+              </p>
+              <span className="inline-flex rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-900 transition group-hover:border-stone-900">
+                כניסה לניהול
               </span>
             </div>
           </Link>

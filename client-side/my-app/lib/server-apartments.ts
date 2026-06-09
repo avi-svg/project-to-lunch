@@ -4,10 +4,21 @@ const API_BASE_URL =
   "http://localhost:3000";
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
+export type ApartmentResident = {
+  id: string;
+  name: string | null;
+  email: string;
+};
+
+export type ApartmentGender = "male" | "female";
+
 export type BackendApartment = {
   id: string;
   name: string;
+  address: string | null;
+  gender: ApartmentGender | null;
   position: number;
+  residents: ApartmentResident[];
   createdAt: string;
   updatedAt: string;
 };
@@ -22,14 +33,38 @@ export class BackendApartmentsError extends Error {
   }
 }
 
+function normalizeResident(value: unknown): ApartmentResident | null {
+  if (typeof value !== "object" || value === null) return null;
+  const c = value as Record<string, unknown>;
+  if (typeof c.id !== "string" || typeof c.email !== "string") return null;
+  return {
+    id: c.id,
+    name: typeof c.name === "string" ? c.name : null,
+    email: c.email,
+  };
+}
+
 function normalizeApartment(value: unknown): BackendApartment | null {
   if (typeof value !== "object" || value === null) return null;
   const c = value as Record<string, unknown>;
   if (typeof c.id !== "string" || typeof c.name !== "string") return null;
+
+  const gender =
+    c.gender === "male" || c.gender === "female" ? c.gender : null;
+
+  const residents = Array.isArray(c.residents)
+    ? (c.residents as unknown[])
+        .map(normalizeResident)
+        .filter((r): r is ApartmentResident => r !== null)
+    : [];
+
   return {
     id: c.id,
     name: c.name,
+    address: typeof c.address === "string" ? c.address : null,
+    gender,
     position: typeof c.position === "number" ? c.position : 0,
+    residents,
     createdAt: typeof c.createdAt === "string" ? c.createdAt : "",
     updatedAt: typeof c.updatedAt === "string" ? c.updatedAt : "",
   };
@@ -96,6 +131,6 @@ export async function fetchAllApartments(): Promise<BackendApartment[]> {
   }
 
   return (data.apartments as unknown[])
-    .map((a) => normalizeApartment(a))
+    .map(normalizeApartment)
     .filter((a): a is BackendApartment => a !== null);
 }

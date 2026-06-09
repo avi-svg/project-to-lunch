@@ -9,6 +9,7 @@ export type BackendDirectoryUser = {
   birthDate?: string | null;
   isActive?: boolean;
   hasPassword?: boolean;
+  apartmentId?: string | null;
 };
 
 export type BirthdayGreeting = {
@@ -60,6 +61,7 @@ export type UpdateBackendUserPayload = {
   birthDate?: string | null;
   password?: string | null;
   isActive?: boolean;
+  apartmentId?: string | null;
 };
 
 function extractUserFromPayload(data: unknown, fallbackMessage: string) {
@@ -133,6 +135,10 @@ function normalizeDirectoryUser(value: unknown): BackendDirectoryUser | null {
       typeof candidate.hasPassword === "boolean"
         ? candidate.hasPassword
         : undefined,
+    apartmentId:
+      typeof candidate.apartmentId === "string"
+        ? candidate.apartmentId
+        : null,
   };
 }
 
